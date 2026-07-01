@@ -1,7 +1,6 @@
-# ISCP V0.1 Release Checklist
+# ISCP Release Checklist
 
-V0.1 is the first engineering implementation of ISCP in this repository. The
-`v2` object, schema, and API namespace refers to protocol semantics.
+This checklist defines the release gates for the ISCP stack.
 
 ## Release Decision
 
@@ -23,13 +22,6 @@ P0 case, empty P0 suite, placeholder report, or undocumented residual risk.
 - Conformance runner and vectors.
 - Docker Compose and Helm baseline.
 - Operations and security documentation.
-
-## Out of Scope
-
-- V1 migration, compatibility, bridge APIs, or old database upgrades.
-- Web UI or admin static assets.
-- Relay-side business payload decryption.
-- Vendor-specific managed cloud endpoints in protocol or SDK core logic.
 
 ## Required Gates
 
@@ -60,7 +52,7 @@ Release validation writes local evidence under:
 These files are generated artifacts. They are intentionally ignored by Git and
 should be reproduced by maintainers during release validation.
 
-## Residual V0.1 Risks
+## Residual Risks
 
 - External KMS/HSM integration is interface-defined but not vendor-bound.
 - OpenAPI and JSON Schema gates validate checked-in source documents; full

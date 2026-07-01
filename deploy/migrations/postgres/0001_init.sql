@@ -1,5 +1,4 @@
--- ISCP V0.1 initial PostgreSQL 18 schema.
--- This project has no V1 database migration path.
+-- ISCP initial PostgreSQL 18 schema.
 
 CREATE SCHEMA IF NOT EXISTS iscp_relay;
 CREATE SCHEMA IF NOT EXISTS iscp_trust;
@@ -232,4 +231,3 @@ ON CONFLICT (version) DO NOTHING;
 INSERT INTO iscp_trust.schema_migrations(version, name)
 VALUES (1, 'init')
 ON CONFLICT (version) DO NOTHING;
-

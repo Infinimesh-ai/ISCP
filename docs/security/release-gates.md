@@ -14,7 +14,7 @@ generated conformance report reaches a Go decision.
   plaintext debug behavior.
 - Relay cannot decrypt business payloads.
 - Trust revocation blocks new sensitive sessions.
-- PostgreSQL 18 starts from an empty database and applies V0.1 migrations.
+- PostgreSQL 18 starts from an empty database and applies the migrations.
 - Container images run as non-root and expose health checks.
 - Secrets are not emitted in logs, errors, audit records, panic surfaces, or CLI
   output.
@@ -42,5 +42,5 @@ they must be reproducible from source.
 
 The OpenAPI gate validates the checked-in OpenAPI 3.1 document against the
 Relay and Trust Root public route registrations. The JSON Schema gate validates
-the V0.1 schema manifest, JSON parseability, schema IDs, object type constants,
+the schema manifest, JSON parseability, schema IDs, object type constants,
 closed top-level objects, and signature definitions.

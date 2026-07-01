@@ -1,15 +1,10 @@
 # ISCP
 
-[![CI](https://github.com/Chiiz0/ISCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Chiiz0/ISCP/actions/workflows/ci.yml)
+[![CI](https://github.com/Infinimesh-ai/ISCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Infinimesh-ai/ISCP/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ISCP is a protocol-first implementation of secure device identity, trust
 authorization, relay delivery, and end-to-end encrypted session messaging.
-
-This repository contains the V0.1 engineering release of the ISCP stack. The
-`v2` names used by protocol objects, JSON Schemas, and REST paths are the
-protocol and schema namespace, not evidence of an earlier implementation in
-this repository.
 
 ## What Is Included
 
@@ -137,7 +132,7 @@ go run ./tools/iscp-cli/cmd/iscp --help
 Install it from the repository module:
 
 ```powershell
-go install github.com/Chiiz0/ISCP/tools/iscp-cli/cmd/iscp@latest
+go install github.com/Infinimesh-ai/ISCP/tools/iscp-cli/cmd/iscp@latest
 ```
 
 ## Documentation
@@ -148,7 +143,7 @@ go install github.com/Chiiz0/ISCP/tools/iscp-cli/cmd/iscp@latest
 - [Event catalog](docs/api/events.md)
 - [Installation notes](docs/operations/install.md)
 - [PostgreSQL operations](docs/operations/postgres.md)
-- [Release checklist](docs/release/v0.1.md)
+- [Release checklist](docs/release/checklist.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
 
@@ -170,8 +165,6 @@ by Git.
 
 - No Web UI or admin static asset bundle.
 - No mobile app store release flow or full mobile UI.
-- No V1 migration, V1 compatibility layer, old API bridge, old database
-  upgrade, or historical behavior preservation.
 - No relay-side decryption of business payloads.
 - No hard-coded IMMS, Infinimesh Cloud, or other vendor service endpoints in
   protocol objects, Core SDK, or reference service core logic.

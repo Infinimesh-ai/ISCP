@@ -79,7 +79,7 @@ if ($missingSchemas.Count -gt 0) {
     $errors += "required JSON Schemas are missing: $($missingSchemas -join ', ')"
 }
 if ($unexpectedSchemas.Count -gt 0) {
-    $errors += "schemas/json contains files not in the V0.1 schema manifest: $($unexpectedSchemas -join ', ')"
+    $errors += "schemas/json contains files not in the schema manifest: $($unexpectedSchemas -join ', ')"
 }
 
 foreach ($name in $expectedSchemas.Keys) {

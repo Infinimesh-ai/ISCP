@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	"github.com/Chiiz0/ISCP/pkg/server/repository"
+	"github.com/Infinimesh-ai/ISCP/pkg/server/repository"
 )
 
 type Queryer interface {

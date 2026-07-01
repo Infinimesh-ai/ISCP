@@ -1,13 +1,12 @@
 # Changelog
 
-All notable changes to ISCP V0.1 are tracked here.
+All notable changes to ISCP are tracked here.
 
 ## 0.1.0 - Unreleased
 
-- Initialize ISCP V0.1 as the first engineering implementation.
+- Initialize the ISCP protocol, SDK, reference services, and conformance
+  baseline.
 - Establish the protocol v2 and schema namespace posture.
-- Declare that V1 migration, compatibility, bridging, and old database upgrades
-  are out of scope.
 - Replace placeholder conformance output with an executable runner covering P0
   Core, P0 Security Negative, P1 Feature, service interoperability, and CLI
   workflow suites.

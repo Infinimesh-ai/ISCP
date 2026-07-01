@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/config"
-	iscplog "github.com/Chiiz0/ISCP/pkg/iscp/logging"
-	"github.com/Chiiz0/ISCP/pkg/server/postgres"
-	trustsvc "github.com/Chiiz0/ISCP/services/trust-root-reference/internal/trust"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/config"
+	iscplog "github.com/Infinimesh-ai/ISCP/pkg/iscp/logging"
+	"github.com/Infinimesh-ai/ISCP/pkg/server/postgres"
+	trustsvc "github.com/Infinimesh-ai/ISCP/services/trust-root-reference/internal/trust"
 )
 
 func main() {

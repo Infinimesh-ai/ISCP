@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/canonical"
-	"github.com/Chiiz0/ISCP/pkg/iscp/crypto"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/canonical"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
 )
 
 type Entry struct {

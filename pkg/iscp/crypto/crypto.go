@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/curve25519"
 	"golang.org/x/crypto/hkdf"
 
-	iscperrors "github.com/Chiiz0/ISCP/pkg/iscp/errors"
+	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 )
 
 const CiphersuiteV2 = "ISCP_V2_X25519_HKDF_SHA256_CHACHA20POLY1305"

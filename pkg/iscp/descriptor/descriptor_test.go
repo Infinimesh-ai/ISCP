@@ -4,9 +4,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/config"
-	"github.com/Chiiz0/ISCP/pkg/iscp/crypto"
-	"github.com/Chiiz0/ISCP/pkg/iscp/identity"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/config"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
 )
 
 func TestDescriptorVerifyAndProductionUnsignedReject(t *testing.T) {

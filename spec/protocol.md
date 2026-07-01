@@ -1,7 +1,6 @@
 # ISCP Protocol v2
 
-ISCP V0.1 implements the protocol v2 object model as the first engineering
-release. There is no V1 compatibility or migration path.
+ISCP implements the protocol v2 object model.
 
 ## Layers
 
@@ -56,4 +55,3 @@ authorization decisions based on plaintext business payloads.
 Trust Roots authorize devices and issue Trust Grants. Access credentials are
 not sufficient to open sensitive sessions. Trust revocation blocks new sensitive
 sessions.
-

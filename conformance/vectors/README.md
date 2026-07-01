@@ -1,6 +1,6 @@
 # ISCP Conformance Vectors
 
-The V0.1 conformance runner lives in the Go package under `conformance/`.
+The conformance runner lives in the Go package under `conformance/`.
 `./scripts/conformance.ps1` runs the package tests, writes
 `conformance/report.json`, and validates the report.
 

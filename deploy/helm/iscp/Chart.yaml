@@ -1,7 +1,6 @@
 apiVersion: v2
 name: iscp
-description: ISCP V0.1 Relay and Trust Root reference services
+description: ISCP Relay and Trust Root reference services
 type: application
 version: 0.1.0
 appVersion: "0.1.0"
-

@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	iscperrors "github.com/Chiiz0/ISCP/pkg/iscp/errors"
+	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 )
 
 const signaturePrefix = "ISCP-V2-SIGNATURE\x00"

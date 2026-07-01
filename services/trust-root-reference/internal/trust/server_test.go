@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/crypto"
-	"github.com/Chiiz0/ISCP/pkg/iscp/identity"
-	trustcore "github.com/Chiiz0/ISCP/pkg/iscp/trust"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
+	trustcore "github.com/Infinimesh-ai/ISCP/pkg/iscp/trust"
 )
 
 func TestTrustSubmitAuthorizeVerifyAndRevoke(t *testing.T) {

@@ -1,6 +1,6 @@
 openapi: 3.1.0
 info:
-  title: ISCP V0.1 API
+  title: ISCP API
   version: 0.1.0
   summary: API-first ISCP protocol v2 reference services
 servers:
@@ -138,4 +138,3 @@ components:
         details:
           type: object
           additionalProperties: { type: string }
-

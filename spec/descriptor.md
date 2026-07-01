@@ -1,6 +1,6 @@
 # Descriptors
 
-Descriptors publish service metadata and signing keys. V0.1 defines Relay and
+Descriptors publish service metadata and signing keys. ISCP defines Relay and
 Trust Root descriptors.
 
 Signed descriptors use `iscp.signed_descriptor.v2` and include:
@@ -16,4 +16,3 @@ canonical descriptor bytes.
 
 Descriptors MUST include key usage. A key published for descriptor signing MUST
 NOT be accepted for Trust Grant signing unless that usage is explicitly present.
-

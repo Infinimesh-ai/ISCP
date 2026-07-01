@@ -1,7 +1,6 @@
 # PostgreSQL 18 Operations
 
-ISCP V0.1 starts from an empty PostgreSQL 18 database. There is no V1 database
-migration, old schema upgrade, or compatibility bridge.
+ISCP starts from an empty PostgreSQL 18 database.
 
 ## Schemas
 
@@ -17,7 +16,7 @@ Migrations live in:
 - `deploy/migrations/postgres` for operators and containers.
 - `pkg/server/postgres/migrations` for embedded service startup.
 
-Migrations are designed to be idempotent for empty V0.1 environments.
+Migrations are designed to be idempotent for empty ISCP environments.
 The Relay and Trust Root reference services also apply the embedded migrations
 on startup when `ISCP_DATABASE_URL` is configured.
 
@@ -39,7 +38,7 @@ Release validation must use the PostgreSQL-backed Compose path.
 - Refresh credentials are stored only as hashes.
 - Audit logs are append-only and include `previous_hash` and `entry_hash`.
 
-Current V0.1 service write paths persist:
+Current service write paths persist:
 
 - Relay device identities, access token hashes, refresh credential hashes,
   opaque message raw/canonical bytes, and delivery receipt raw/canonical bytes.

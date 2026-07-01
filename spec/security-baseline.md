@@ -1,4 +1,4 @@
-# ISCP V0.1 Security Baseline
+# ISCP Security Baseline
 
 These rules are release gates. A MUST or MUST NOT must map to a test, profile
 gate, database constraint, code check, log scan, or release checklist item.
@@ -63,4 +63,3 @@ gate, database constraint, code check, log scan, or release checklist item.
 - Signed object raw and canonical bytes MUST be retained for verification.
 - `jsonb` reserialization MUST NOT be used as a signature verification input.
 - Repository methods MUST scope by `domain_id`.
-

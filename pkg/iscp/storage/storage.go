@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/crypto"
-	iscperrors "github.com/Chiiz0/ISCP/pkg/iscp/errors"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
+	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 )
 
 type IdentityKeyStore interface {

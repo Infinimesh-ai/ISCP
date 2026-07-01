@@ -6,7 +6,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 
-	iscperrors "github.com/Chiiz0/ISCP/pkg/iscp/errors"
+	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 )
 
 type DomainID string

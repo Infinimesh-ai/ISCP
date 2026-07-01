@@ -1,8 +1,7 @@
 # Contributing
 
-ISCP V0.1 is the first implementation of this project. Contributions should
-preserve the protocol-first architecture and the security boundaries described
-in [SECURITY.md](SECURITY.md).
+Contributions should preserve the protocol-first architecture and the security
+boundaries described in [SECURITY.md](SECURITY.md).
 
 ## Development Rules
 
@@ -15,8 +14,8 @@ in [SECURITY.md](SECURITY.md).
   keys, or plaintext payloads.
 - Do not hard-code vendor cloud endpoints in protocol objects, Core SDK, or
   reference service core logic.
-- Do not introduce Web UI code, V1 migration, V1 compatibility, old API bridges,
-  or old database upgrade paths as V0.1 work.
+- Do not introduce Web UI code or vendor-specific managed service assumptions
+  into the protocol, SDK, or reference service core.
 
 ## Local Checks
 
@@ -46,5 +45,5 @@ local evidence and are ignored by Git.
 - Security negative cases considered.
 - Generated artifacts left out of the commit unless they are source artifacts,
   such as JSON Schemas or OpenAPI.
-- No Web UI assets, V1 compatibility work, or vendor-specific service endpoints
-  added to the V0.1 core.
+- No Web UI assets or vendor-specific service endpoints added to the protocol,
+  SDK, or reference service core.

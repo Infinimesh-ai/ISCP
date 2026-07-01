@@ -1,7 +1,6 @@
 # Install
 
-ISCP V0.1 is the first implementation. Install flows start from an empty V0.1
-environment.
+Install flows start from an empty ISCP environment.
 
 ## Local Compose
 
@@ -21,4 +20,3 @@ Services:
 ./scripts/test.ps1
 . ./scripts/common.ps1; Invoke-Go run ./tools/iscp-cli/cmd/iscp demo local-e2e
 ```
-

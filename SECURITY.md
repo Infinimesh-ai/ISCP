@@ -1,12 +1,12 @@
 # Security Policy
 
-ISCP V0.1 treats protocol safety as a release gate. Security regressions in
-identity, trust, session establishment, envelope encryption, relay opacity,
-credential handling, logging, or profile gates block release.
+ISCP treats protocol safety as a release gate. Security regressions in identity,
+trust, session establishment, envelope encryption, relay opacity, credential
+handling, logging, or profile gates block release.
 
-## Supported Version
+## Supported Versions
 
-V0.1 is the first implementation. There is no V1 compatibility surface.
+Security updates are handled on the active release line.
 
 ## Security Invariants
 
@@ -41,7 +41,7 @@ Please include:
 
 ## Release Gates
 
-The following gates must pass before V0.1 can be released:
+The following gates must pass before release:
 
 - P0 Core Tests: 100% pass.
 - P0 Security Negative Tests: 100% pass.

@@ -1,4 +1,4 @@
-module github.com/Chiiz0/ISCP
+module github.com/Infinimesh-ai/ISCP
 
 go 1.25.0
 

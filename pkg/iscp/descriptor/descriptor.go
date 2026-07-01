@@ -4,11 +4,11 @@ import (
 	"encoding/json"
 	"time"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/canonical"
-	"github.com/Chiiz0/ISCP/pkg/iscp/config"
-	"github.com/Chiiz0/ISCP/pkg/iscp/crypto"
-	iscperrors "github.com/Chiiz0/ISCP/pkg/iscp/errors"
-	"github.com/Chiiz0/ISCP/pkg/iscp/identity"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/canonical"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/config"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
+	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
 )
 
 const TypeSignedDescriptor = "iscp.signed_descriptor.v2"

@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/crypto"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
 )
 
 func TestProofRoundTrip(t *testing.T) {

@@ -4,7 +4,7 @@
 
 | ID | Name | Purpose |
 | --- | --- | --- |
-| `ISCP_V2_X25519_HKDF_SHA256_CHACHA20POLY1305` | X25519 + HKDF-SHA256 + ChaCha20-Poly1305 | Default V0.1 session ciphersuite. |
+| `ISCP_V2_X25519_HKDF_SHA256_CHACHA20POLY1305` | X25519 + HKDF-SHA256 + ChaCha20-Poly1305 | Default session ciphersuite. |
 
 ## Algorithms
 
@@ -28,4 +28,3 @@ iscp/v2/session/server-to-client
 iscp/v2/session/ready
 iscp/v2/envelope/aad
 ```
-

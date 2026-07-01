@@ -1,7 +1,6 @@
 # ISCP Documentation
 
-This directory contains public project documentation for the ISCP V0.1
-engineering release.
+This directory contains public project documentation for ISCP.
 
 ## API
 
@@ -23,8 +22,8 @@ engineering release.
 ## Security and Release
 
 - [Security release gates](security/release-gates.md)
-- [V0.1 release checklist](release/v0.1.md)
-- [Version scope decision](decisions/0001-version-scope.md)
+- [Release checklist](release/checklist.md)
+- [Protocol namespace decision](decisions/0001-protocol-namespace.md)
 
 ## Protocol
 

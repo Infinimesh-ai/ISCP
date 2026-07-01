@@ -1,7 +1,6 @@
 # Upgrade
 
-V0.1 has no historical V1 upgrade path. The database schema starts at
-`0001_init.sql`.
+The database schema starts at `0001_init.sql`.
 
 Future upgrades must:
 
@@ -10,4 +9,3 @@ Future upgrades must:
 - Preserve refresh credential hash-only storage.
 - Preserve `domain_id` scoping.
 - Include rollback or restore guidance.
-

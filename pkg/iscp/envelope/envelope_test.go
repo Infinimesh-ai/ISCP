@@ -4,10 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/crypto"
-	"github.com/Chiiz0/ISCP/pkg/iscp/identity"
-	"github.com/Chiiz0/ISCP/pkg/iscp/payload"
-	"github.com/Chiiz0/ISCP/pkg/iscp/session"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/payload"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/session"
 )
 
 func TestEnvelopeE2EAndNegativeCases(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	iscperrors "github.com/Chiiz0/ISCP/pkg/iscp/errors"
+	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 )
 
 type Profile string

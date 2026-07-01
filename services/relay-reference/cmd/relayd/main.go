@@ -9,10 +9,10 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/Chiiz0/ISCP/pkg/iscp/config"
-	iscplog "github.com/Chiiz0/ISCP/pkg/iscp/logging"
-	"github.com/Chiiz0/ISCP/pkg/server/postgres"
-	"github.com/Chiiz0/ISCP/services/relay-reference/internal/relay"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/config"
+	iscplog "github.com/Infinimesh-ai/ISCP/pkg/iscp/logging"
+	"github.com/Infinimesh-ai/ISCP/pkg/server/postgres"
+	"github.com/Infinimesh-ai/ISCP/services/relay-reference/internal/relay"
 )
 
 func main() {
