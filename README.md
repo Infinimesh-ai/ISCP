@@ -3,8 +3,21 @@
 [![CI](https://github.com/Infinimesh-ai/ISCP/actions/workflows/ci.yml/badge.svg)](https://github.com/Infinimesh-ai/ISCP/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-ISCP is a protocol-first implementation of secure device identity, trust
-authorization, relay delivery, and end-to-end encrypted session messaging.
+ISCP, the Interoperable Secure Connectivity Protocol, is a protocol-first
+implementation of secure device identity, trust authorization, relay delivery,
+and end-to-end encrypted session messaging.
+
+## Origin
+
+ISCP began inside Infinimesh as the Infinimesh Secure Connectivity Protocol, a
+core infrastructure layer for private intelligent systems. As the design
+matured, Infinimesh chose to make the protocol independent and public: a
+connectivity foundation trusted enough for private deployments should also be
+open enough to audit, implement, and interoperate across vendors and
+environments.
+
+That is why ISCP is now developed as the Interoperable Secure Connectivity
+Protocol.
 
 ## What Is Included
 
