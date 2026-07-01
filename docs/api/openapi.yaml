@@ -1,0 +1,141 @@
+openapi: 3.1.0
+info:
+  title: ISCP V0.1 API
+  version: 0.1.0
+  summary: API-first ISCP protocol v2 reference services
+servers:
+  - url: http://localhost:8080
+    description: Relay Reference Service
+  - url: http://localhost:8081
+    description: Trust Root Reference Service
+paths:
+  /.well-known/iscp/relay:
+    get:
+      summary: Fetch signed relay descriptor
+      responses:
+        "200":
+          description: Signed relay descriptor and pin
+  /v2/relay/devices/bind-self:
+    post:
+      summary: Bind a device to relay access using DeviceIdentity and DeviceProof
+      responses:
+        "200": { description: Access and refresh credentials }
+  /v2/relay/devices/register-with-ticket:
+    post:
+      summary: Register a device using a pairing ticket
+      responses:
+        "200": { description: Access and refresh credentials }
+        "409": { description: Ticket already consumed }
+  /v2/relay/devices/refresh-access:
+    post:
+      summary: Refresh relay access
+      responses:
+        "200": { description: New access and refresh credentials }
+        "401": { description: Invalid refresh credential }
+  /v2/relay/devices/revoke-access:
+    post:
+      summary: Revoke relay access for a device
+      responses:
+        "200": { description: Revoked }
+  /v2/relay/connect:
+    get:
+      summary: Relay WebSocket connect challenge and READY state machine
+      responses:
+        "101": { description: WebSocket upgraded }
+  /v2/relay/envelopes:
+    post:
+      summary: Submit an opaque SecureEnvelope
+      responses:
+        "202": { description: Relay receipt }
+  /v2/relay/admin/devices:
+    get:
+      summary: List relay device metadata
+      responses:
+        "200": { description: Devices }
+  /v2/relay/admin/connections:
+    get:
+      summary: List relay connection metadata
+      responses:
+        "200": { description: Connections }
+  /v2/relay/admin/messages:
+    get:
+      summary: List relay message metadata without payload plaintext
+      responses:
+        "200": { description: Message metadata }
+  /.well-known/iscp/trust-root:
+    get:
+      summary: Fetch signed Trust Root descriptor
+      responses:
+        "200": { description: Signed descriptor }
+  /v2/trust/devices/submit:
+    post:
+      summary: Submit a device identity to Trust Root
+      responses:
+        "200": { description: Device record }
+  /v2/trust/devices/authorize:
+    post:
+      summary: Authorize a device and issue a Trust Grant
+      responses:
+        "200": { description: Trust Grant }
+  /v2/trust/devices/revoke:
+    post:
+      summary: Revoke a device and increase revocation epoch
+      responses:
+        "200": { description: Device revoked }
+  /v2/trust/devices/status:
+    get:
+      summary: Fetch device authorization status
+      parameters:
+        - name: device_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Device status }
+  /v2/trust/grants/verify:
+    post:
+      summary: Verify Trust Grant permission, audience, confirmation, relay, and revocation
+      responses:
+        "200": { description: Grant valid }
+        "403": { description: Grant invalid }
+  /v2/trust/grants/status:
+    get:
+      summary: Fetch Grant status
+      parameters:
+        - name: grant_id
+          in: query
+          required: true
+          schema: { type: string }
+      responses:
+        "200": { description: Grant status }
+  /v2/trust/revocations:
+    get:
+      summary: List revocation epochs
+      responses:
+        "200": { description: Revocations }
+  /v2/trust/keys/rotate:
+    post:
+      summary: Rotate Trust Root signing key next to active
+      responses:
+        "200": { description: Active key }
+  /v2/trust/admin/audit:
+    get:
+      summary: List Trust Root audit metadata
+      responses:
+        "200": { description: Audit entries }
+components:
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [type, code, message, retryable]
+      properties:
+        type: { const: iscp.error.v2 }
+        code: { type: string }
+        message: { type: string }
+        retryable: { type: boolean }
+        request_id: { type: string }
+        details:
+          type: object
+          additionalProperties: { type: string }
+

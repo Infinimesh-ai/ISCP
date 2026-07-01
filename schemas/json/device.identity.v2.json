@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/device.identity.v2.json",
+  "title": "ISCP Device Identity v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "domain_id", "device_id", "public_key", "created_at"],
+  "properties": {
+    "type": { "const": "iscp.device.identity.v2" },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "device_id": { "type": "string", "minLength": 1 },
+    "public_key": { "$ref": "#/$defs/public_key" },
+    "created_at": { "type": "string", "format": "date-time" },
+    "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "$defs": {
+    "public_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kty", "use", "kid", "public"],
+      "properties": {
+        "kty": { "const": "Ed25519" },
+        "use": { "const": "identity-signature" },
+        "kid": { "type": "string", "minLength": 1 },
+        "public": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

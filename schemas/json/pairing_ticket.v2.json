@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/pairing_ticket.v2.json",
+  "title": "ISCP Pairing Ticket v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "ticket_id", "domain_id", "relay_id", "trust_root_id", "max_uses", "issued_at", "expires_at", "signature"],
+  "properties": {
+    "type": { "const": "iscp.pairing_ticket.v2" },
+    "ticket_id": { "type": "string", "minLength": 1 },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "relay_id": { "type": "string", "minLength": 1 },
+    "trust_root_id": { "type": "string", "minLength": 1 },
+    "max_uses": { "type": "integer", "minimum": 1 },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "value"],
+      "properties": {
+        "alg": { "const": "Ed25519" },
+        "kid": { "type": "string" },
+        "value": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iscp-relay
+spec:
+  replicas: {{ .Values.relay.replicas }}
+  selector:
+    matchLabels:
+      app: iscp-relay
+  template:
+    metadata:
+      labels:
+        app: iscp-relay
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: relay
+          image: {{ .Values.relay.image }}
+          ports:
+            - containerPort: {{ .Values.relay.port }}
+          env:
+            - name: ISCP_PROFILE
+              value: {{ .Values.profile | quote }}
+            - name: ISCP_DOMAIN_ID
+              value: {{ .Values.domainID | quote }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: {{ .Values.relay.port }}
+          livenessProbe:
+            httpGet:
+              path: /livez
+              port: {{ .Values.relay.port }}
+

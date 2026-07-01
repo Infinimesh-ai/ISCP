@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/trust_root.descriptor.v2.json",
+  "title": "ISCP Trust Root Descriptor v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "trust_root_id", "domain_id", "base_url", "keys", "issued_at", "expires_at"],
+  "properties": {
+    "type": { "const": "iscp.trust_root.descriptor.v2" },
+    "trust_root_id": { "type": "string", "minLength": 1 },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "base_url": { "type": "string", "format": "uri" },
+    "keys": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/key" } },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "$defs": {
+    "key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kty", "use", "kid", "public", "state"],
+      "properties": {
+        "kty": { "const": "Ed25519" },
+        "use": { "type": "string", "enum": ["descriptor-signature", "grant-signature"] },
+        "kid": { "type": "string" },
+        "public": { "type": "string", "contentEncoding": "base64url" },
+        "state": { "type": "string", "enum": ["next", "active", "retired", "revoked"] }
+      }
+    }
+  }
+}
+

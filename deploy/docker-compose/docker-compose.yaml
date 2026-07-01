@@ -1,0 +1,65 @@
+services:
+  postgres:
+    image: postgres:18
+    environment:
+      POSTGRES_DB: iscp
+      POSTGRES_USER: iscp
+      POSTGRES_PASSWORD: iscp-local-password
+    ports:
+      - "${ISCP_BIND_ADDR:-127.0.0.1}:${ISCP_POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - iscp-postgres:/var/lib/postgresql
+      - ../migrations/postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U iscp -d iscp"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  relay:
+    build:
+      context: ../..
+      dockerfile: services/relay-reference/Dockerfile
+    environment:
+      ISCP_PROFILE: local-lab
+      ISCP_DOMAIN_ID: local
+      ISCP_RELAY_ID: relay-local
+      ISCP_RELAY_ADDR: :8080
+      ISCP_RELAY_BASE_URL: http://localhost:8080
+      ISCP_RELAY_WS_URL: ws://localhost:8080/v2/relay/connect
+      ISCP_DATABASE_URL: postgres://iscp:iscp-local-password@postgres:5432/iscp?sslmode=disable
+    ports:
+      - "${ISCP_BIND_ADDR:-127.0.0.1}:${ISCP_RELAY_PORT:-8080}:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/relayd", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  trust-root:
+    build:
+      context: ../..
+      dockerfile: services/trust-root-reference/Dockerfile
+    environment:
+      ISCP_PROFILE: local-lab
+      ISCP_DOMAIN_ID: local
+      ISCP_TRUST_ROOT_ID: trust-local
+      ISCP_TRUST_ADDR: :8081
+      ISCP_TRUST_BASE_URL: http://localhost:8081
+      ISCP_DATABASE_URL: postgres://iscp:iscp-local-password@postgres:5432/iscp?sslmode=disable
+    ports:
+      - "${ISCP_BIND_ADDR:-127.0.0.1}:${ISCP_TRUST_PORT:-8081}:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "/trustd", "healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+volumes:
+  iscp-postgres:

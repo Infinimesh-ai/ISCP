@@ -1,0 +1,35 @@
+# Build and test outputs
+dist/
+bin/
+coverage.out
+coverage.html
+*.coverprofile
+*.prof
+*.test
+*.out
+
+# Generated conformance evidence
+conformance/report.json
+
+# Local logs and scratch files
+*.log
+tmp/
+temp/
+.tmp/
+
+# Editor and OS metadata
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Dependency and tool caches
+node_modules/
+.cache/
+
+# Local environment files
+.env
+.env.*
+!.env.example

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/provisioning.bundle.v2.json",
+  "title": "ISCP Provisioning Bundle v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "bundle_id", "issued_to_device_id", "issued_to_public_key_thumbprint", "relay_descriptor", "trust_root_descriptor", "access_credential", "refresh_credential_wrapped", "trust_grant", "issued_at", "expires_at", "signature"],
+  "properties": {
+    "type": { "const": "iscp.provisioning.bundle.v2" },
+    "bundle_id": { "type": "string", "minLength": 1 },
+    "issued_to_device_id": { "type": "string", "minLength": 1 },
+    "issued_to_public_key_thumbprint": { "type": "string", "minLength": 8 },
+    "relay_descriptor": { "type": "object" },
+    "trust_root_descriptor": { "type": "object" },
+    "access_credential": { "type": "object" },
+    "refresh_credential_wrapped": { "type": "string", "contentEncoding": "base64url" },
+    "trust_grant": { "type": "object" },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "value"],
+      "properties": {
+        "alg": { "const": "Ed25519" },
+        "kid": { "type": "string" },
+        "value": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

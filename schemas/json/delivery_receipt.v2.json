@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/delivery_receipt.v2.json",
+  "title": "ISCP Delivery Receipt v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "receipt_id", "message_id", "domain_id", "relay_id", "status", "issued_at"],
+  "properties": {
+    "type": { "const": "iscp.delivery_receipt.v2" },
+    "receipt_id": { "type": "string", "minLength": 1 },
+    "message_id": { "type": "string", "minLength": 1 },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "relay_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "enum": ["accepted", "queued", "delivered_to_connection", "expired", "rejected"] },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "value"],
+      "properties": {
+        "alg": { "const": "Ed25519" },
+        "kid": { "type": "string" },
+        "value": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

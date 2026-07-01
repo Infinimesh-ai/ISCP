@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/session.ready.v2.json",
+  "title": "ISCP Session Ready v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "session_id", "device_id", "transcript_hash", "ready_mac", "signature"],
+  "properties": {
+    "type": { "const": "iscp.session.ready.v2" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "device_id": { "type": "string", "minLength": 1 },
+    "transcript_hash": { "type": "string", "contentEncoding": "base64url" },
+    "ready_mac": { "type": "string", "contentEncoding": "base64url" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "value"],
+      "properties": {
+        "alg": { "const": "Ed25519" },
+        "kid": { "type": "string" },
+        "value": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

@@ -1,0 +1,3 @@
+. "$PSScriptRoot/common.ps1"
+Invoke-Go test ./...
+

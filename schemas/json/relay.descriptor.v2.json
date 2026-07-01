@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/relay.descriptor.v2.json",
+  "title": "ISCP Relay Descriptor v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "relay_id", "domain_id", "base_url", "websocket_url", "signing_keys", "issued_at", "expires_at"],
+  "properties": {
+    "type": { "const": "iscp.relay.descriptor.v2" },
+    "relay_id": { "type": "string", "minLength": 1 },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "base_url": { "type": "string", "format": "uri" },
+    "websocket_url": { "type": "string", "format": "uri" },
+    "signing_keys": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/public_key" } },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "metadata": { "type": "object", "additionalProperties": { "type": "string" } }
+  },
+  "$defs": {
+    "public_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kty", "use", "kid", "public"],
+      "properties": {
+        "kty": { "const": "Ed25519" },
+        "use": { "type": "string", "enum": ["descriptor-signature", "access-signature"] },
+        "kid": { "type": "string" },
+        "public": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

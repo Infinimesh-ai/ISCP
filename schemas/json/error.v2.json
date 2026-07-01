@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/error.v2.json",
+  "title": "ISCP Error v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "code", "message", "retryable"],
+  "properties": {
+    "type": { "const": "iscp.error.v2" },
+    "code": { "type": "string", "pattern": "^ISCP[A-Z]+[0-9]{3}$" },
+    "message": { "type": "string" },
+    "retryable": { "type": "boolean" },
+    "request_id": { "type": "string" },
+    "details": { "type": "object", "additionalProperties": { "type": "string" } }
+  }
+}
+

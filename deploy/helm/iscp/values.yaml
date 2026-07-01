@@ -1,0 +1,16 @@
+profile: production
+domainID: local
+
+relay:
+  image: iscp/relay-reference:0.1.0
+  replicas: 1
+  port: 8080
+
+trustRoot:
+  image: iscp/trust-root-reference:0.1.0
+  replicas: 1
+  port: 8081
+
+postgres:
+  externalURL: ""
+

@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/signed_descriptor.v2.json",
+  "title": "ISCP Signed Descriptor v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "descriptor_type", "descriptor", "signed_by", "signed_at", "signature"],
+  "properties": {
+    "type": { "const": "iscp.signed_descriptor.v2" },
+    "descriptor_type": {
+      "enum": ["iscp.relay.descriptor.v2", "iscp.trust_root.descriptor.v2"]
+    },
+    "descriptor": { "type": "object" },
+    "signed_by": { "type": "string", "minLength": 1 },
+    "signed_at": { "type": "string", "format": "date-time" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "value"],
+      "properties": {
+        "alg": { "const": "Ed25519" },
+        "kid": { "type": "string" },
+        "value": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

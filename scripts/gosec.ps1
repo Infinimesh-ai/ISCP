@@ -1,0 +1,3 @@
+. "$PSScriptRoot/common.ps1"
+Invoke-Go run github.com/securego/gosec/v2/cmd/gosec@latest ./...
+

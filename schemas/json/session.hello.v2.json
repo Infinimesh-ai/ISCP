@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/session.hello.v2.json",
+  "title": "ISCP Session Hello v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "session_id", "domain_id", "device_id", "peer_device_id", "ciphersuite", "ephemeral_public_key", "grant_id", "issued_at", "signature"],
+  "properties": {
+    "type": { "const": "iscp.session.hello.v2" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "device_id": { "type": "string", "minLength": 1 },
+    "peer_device_id": { "type": "string", "minLength": 1 },
+    "ciphersuite": { "const": "ISCP_V2_X25519_HKDF_SHA256_CHACHA20POLY1305" },
+    "ephemeral_public_key": { "type": "string", "contentEncoding": "base64url" },
+    "grant_id": { "type": "string", "minLength": 1 },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "value"],
+      "properties": {
+        "alg": { "const": "Ed25519" },
+        "kid": { "type": "string" },
+        "value": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
+

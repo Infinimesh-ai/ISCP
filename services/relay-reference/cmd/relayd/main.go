@@ -1,0 +1,89 @@
+package main
+
+import (
+	"context"
+	"log/slog"
+	"net/http"
+	"os"
+	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Chiiz0/ISCP/pkg/iscp/config"
+	iscplog "github.com/Chiiz0/ISCP/pkg/iscp/logging"
+	"github.com/Chiiz0/ISCP/pkg/server/postgres"
+	"github.com/Chiiz0/ISCP/services/relay-reference/internal/relay"
+)
+
+func main() {
+	if len(os.Args) > 1 && os.Args[1] == "healthcheck" {
+		return
+	}
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{ReplaceAttr: iscplog.ReplaceAttr}))
+	ctx := context.Background()
+	db, err := openDatabase(ctx, logger)
+	if err != nil {
+		logger.Error("relay database init failed", "error", err)
+		os.Exit(1)
+	}
+	if db != nil {
+		defer db.Close()
+	}
+	cfg := relay.Config{
+		DomainID:     env("ISCP_DOMAIN_ID", "local"),
+		RelayID:      env("ISCP_RELAY_ID", "relay-local"),
+		BaseURL:      env("ISCP_RELAY_BASE_URL", "http://localhost:8080"),
+		WebSocketURL: env("ISCP_RELAY_WS_URL", "ws://localhost:8080/v2/relay/connect"),
+		ProfileGate:  config.DefaultGate(config.LoadProfileFromEnv(config.ProfileLocalLab)),
+		DB:           db,
+	}
+	srv, err := relay.New(cfg)
+	if err != nil {
+		logger.Error("relay init failed", "error", err)
+		os.Exit(1)
+	}
+	addr := env("ISCP_RELAY_ADDR", ":8080")
+	logger.Info("relay starting", "addr", addr)
+	httpServer := &http.Server{
+		Addr:              addr,
+		Handler:           srv.Handler(),
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
+	}
+	if err := httpServer.ListenAndServe(); err != nil {
+		logger.Error("relay stopped", "error", err)
+		os.Exit(1)
+	}
+}
+
+func env(key, fallback string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return fallback
+}
+
+func openDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, error) {
+	dsn := os.Getenv("ISCP_DATABASE_URL")
+	if dsn == "" {
+		logger.Info("relay database disabled; using in-memory state")
+		return nil, nil
+	}
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		return nil, err
+	}
+	migrations, err := postgres.EmbeddedMigrations()
+	if err != nil {
+		pool.Close()
+		return nil, err
+	}
+	if err := postgres.ApplyMigrations(ctx, pool, migrations); err != nil {
+		pool.Close()
+		return nil, err
+	}
+	logger.Info("relay database ready")
+	return pool, nil
+}
