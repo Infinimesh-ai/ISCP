@@ -77,30 +77,32 @@ examples/                     Device/watch simulator examples
 ## Requirements
 
 - Go 1.25.x.
-- PowerShell 7 or Windows PowerShell for the repository scripts.
+- Bash for Linux/macOS repository scripts.
+- PowerShell 7 or Windows PowerShell for the Windows-compatible script entry
+  points.
 - Docker, when running the reference services or when the scripts need their Go
   fallback runtime.
 
-The scripts use a local `go` binary when available. If Go is not installed,
-they fall back to `docker run --rm golang:1.25`.
+The Linux/macOS and PowerShell scripts use a local `go` binary when available.
+If Go is not installed, they fall back to `docker run --rm golang:1.25`.
 
 ## Quick Start
 
 Run the test suite:
 
-```powershell
-./scripts/test.ps1
+```bash
+./scripts/test.sh
 ```
 
 Run formatting and static checks:
 
-```powershell
-./scripts/lint.ps1
+```bash
+./scripts/lint.sh
 ```
 
 Start the reference environment:
 
-```powershell
+```bash
 docker compose -f deploy/docker-compose/docker-compose.yaml up --build
 ```
 
@@ -112,39 +114,39 @@ Default local endpoints:
 
 If those ports are busy, override only the host bindings:
 
-```powershell
-$env:ISCP_BIND_ADDR="127.0.0.1"
-$env:ISCP_POSTGRES_PORT="55435"
-$env:ISCP_RELAY_PORT="9080"
-$env:ISCP_TRUST_PORT="9081"
+```bash
+export ISCP_BIND_ADDR="127.0.0.1"
+export ISCP_POSTGRES_PORT="55435"
+export ISCP_RELAY_PORT="9080"
+export ISCP_TRUST_PORT="9081"
 docker compose -f deploy/docker-compose/docker-compose.yaml up --build
 ```
 
 Run the local end-to-end demo:
 
-```powershell
+```bash
 go run ./tools/iscp-cli/cmd/iscp demo local-e2e
 ```
 
 Run conformance:
 
-```powershell
-$env:ISCP_RELAY_ENDPOINT="http://host.docker.internal:9080"
-$env:ISCP_TRUST_ENDPOINT="http://host.docker.internal:9081"
-./scripts/conformance.ps1
+```bash
+export ISCP_RELAY_ENDPOINT="http://127.0.0.1:9080"
+export ISCP_TRUST_ENDPOINT="http://127.0.0.1:9081"
+./scripts/conformance.sh
 ```
 
 ## CLI
 
 Run the CLI from source:
 
-```powershell
+```bash
 go run ./tools/iscp-cli/cmd/iscp --help
 ```
 
 Install it from the repository module:
 
-```powershell
+```bash
 go install github.com/Infinimesh-ai/ISCP/tools/iscp-cli/cmd/iscp@latest
 ```
 
@@ -166,13 +168,15 @@ The full local release gate runs tests, conformance, secret scanning,
 vulnerability scanning, static security checks, OpenAPI/schema validation, SBOM
 generation, service startup, and release-report validation:
 
-```powershell
-./scripts/release-gate.ps1
+```bash
+./scripts/release-gate.sh
 ```
 
 The gate writes reproducible local evidence under `dist/` and
 `conformance/report.json`. Those files are generated artifacts and are ignored
 by Git.
+
+Windows users can run the equivalent `.ps1` scripts from PowerShell.
 
 ## Non-Goals
 

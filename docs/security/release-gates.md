@@ -21,18 +21,20 @@ generated conformance report reaches a Go decision.
 
 ## Required Commands
 
-```powershell
-./scripts/lint.ps1
-./scripts/test.ps1
-./scripts/conformance.ps1
-./scripts/secret-scan.ps1
-./scripts/govulncheck.ps1
-./scripts/gosec.ps1
-./scripts/generate-openapi.ps1
-./scripts/generate-schemas.ps1
-./scripts/sbom.ps1
-./scripts/release-gate.ps1
+```bash
+./scripts/lint.sh
+./scripts/test.sh
+./scripts/conformance.sh
+./scripts/secret-scan.sh
+./scripts/govulncheck.sh
+./scripts/gosec.sh
+./scripts/generate-openapi.sh
+./scripts/generate-schemas.sh
+./scripts/sbom.sh
+./scripts/release-gate.sh
 ```
+
+Windows-compatible PowerShell mirrors are kept under `scripts/*.ps1`.
 
 ## Generated Evidence
 

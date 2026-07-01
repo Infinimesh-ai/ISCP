@@ -21,21 +21,23 @@ boundaries described in [SECURITY.md](SECURITY.md).
 
 Run the focused checks before opening a pull request:
 
-```powershell
-./scripts/lint.ps1
-./scripts/test.ps1
-./scripts/conformance.ps1
-./scripts/secret-scan.ps1
+```bash
+./scripts/lint.sh
+./scripts/test.sh
+./scripts/conformance.sh
+./scripts/secret-scan.sh
 ```
 
 Run the full release gate before tagging or proposing release changes:
 
-```powershell
-./scripts/release-gate.ps1
+```bash
+./scripts/release-gate.sh
 ```
 
 The full gate generates `dist/` and `conformance/report.json`. Those files are
 local evidence and are ignored by Git.
+
+Windows contributors can run the equivalent `.ps1` scripts from PowerShell.
 
 ## Pull Request Checklist
 

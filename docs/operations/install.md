@@ -4,7 +4,7 @@ Install flows start from an empty ISCP environment.
 
 ## Local Compose
 
-```powershell
+```bash
 docker compose -f deploy/docker-compose/docker-compose.yaml up --build
 ```
 
@@ -16,7 +16,8 @@ Services:
 
 ## CLI Smoke Test
 
-```powershell
-./scripts/test.ps1
-. ./scripts/common.ps1; Invoke-Go run ./tools/iscp-cli/cmd/iscp demo local-e2e
+```bash
+./scripts/test.sh
+. ./scripts/common.sh
+invoke_go run ./tools/iscp-cli/cmd/iscp demo local-e2e
 ```

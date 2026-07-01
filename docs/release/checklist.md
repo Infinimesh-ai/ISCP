@@ -4,7 +4,7 @@ This checklist defines the release gates for the ISCP stack.
 
 ## Release Decision
 
-Release is Go only when `./scripts/release-gate.ps1` completes successfully and
+Release is Go only when `./scripts/release-gate.sh` completes successfully and
 the generated conformance report has `release_decision` set to `go`.
 
 Keep the release No-Go for any missing required endpoint, failed gate, skipped
@@ -25,19 +25,21 @@ P0 case, empty P0 suite, placeholder report, or undocumented residual risk.
 
 ## Required Gates
 
-- `./scripts/lint.ps1`
-- `./scripts/test.ps1`
-- `./scripts/conformance.ps1`
-- `./scripts/secret-scan.ps1`
-- `./scripts/govulncheck.ps1`
-- `./scripts/gosec.ps1`
-- `./scripts/generate-openapi.ps1`
-- `./scripts/generate-schemas.ps1`
-- `./scripts/sbom.ps1`
-- `./scripts/release-gate.ps1`
+- `./scripts/lint.sh`
+- `./scripts/test.sh`
+- `./scripts/conformance.sh`
+- `./scripts/secret-scan.sh`
+- `./scripts/govulncheck.sh`
+- `./scripts/gosec.sh`
+- `./scripts/generate-openapi.sh`
+- `./scripts/generate-schemas.sh`
+- `./scripts/sbom.sh`
+- `./scripts/release-gate.sh`
 
 The release gate starts or detects the Docker Compose PostgreSQL, Relay, and
 Trust Root services before release conformance validation.
+
+Windows-compatible PowerShell mirrors are kept under `scripts/*.ps1`.
 
 ## Generated Evidence
 
