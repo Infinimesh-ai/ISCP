@@ -60,7 +60,9 @@ The traceability gate validates that every MUST and MUST NOT in
 `spec/security-baseline.md` is represented in
 `docs/security/traceability.md` with Covered status and evidence.
 
-The PostgreSQL gate validates the Compose database schema and exercises durable
-Relay and Trust Root proof nonce replay rejection. The Helm gate validates the
-chart baseline, production fail-closed settings, service templates, and, when
-`helm` is installed, both local-lab and production rendering.
+The PostgreSQL gate validates the Compose database schema, exercises durable
+Relay and Trust Root proof nonce replay rejection, and verifies Relay persistent
+queue claim, lease retry, and delivered-message suppression. The Helm gate
+validates the chart baseline, production fail-closed settings, service
+templates, and, when `helm` is installed, both local-lab and production
+rendering.

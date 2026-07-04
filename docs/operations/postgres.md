@@ -5,7 +5,8 @@ ISCP starts from an empty PostgreSQL 18 database.
 ## Schemas
 
 - `iscp_relay`: relay devices, access token hashes, refresh credential hashes,
-  replay cache, connections, opaque messages, delivery receipts, audit log.
+  replay cache, connections, persistent opaque message queue, delivery
+  receipts, audit log.
 - `iscp_trust`: trust devices, permissions, grants, revocations, signing keys,
   proof replay cache, policy versions, audit log.
 
@@ -41,9 +42,16 @@ Release validation must use the PostgreSQL-backed Compose path.
 Current service write paths persist:
 
 - Relay device identities, access token hashes, refresh credential hashes,
-  opaque message raw/canonical bytes, and delivery receipt raw/canonical bytes.
+  opaque message raw/canonical bytes, message delivery leases, delivery attempt
+  counts, and delivery receipt raw/canonical bytes.
 - Trust device identities, authorization state, revocations, and Trust Grant
   raw/canonical bytes.
+
+When PostgreSQL is configured, Relay WebSocket delivery claims pending messages
+from `iscp_relay.messages` using a short lease. This supports service restarts,
+rolling deployments, and multiple Relay replicas without depending on local
+process memory for offline queue state. If a connection drops before delivery is
+marked, the lease expires and the message becomes eligible for retry.
 
 ## Cleanup Jobs
 

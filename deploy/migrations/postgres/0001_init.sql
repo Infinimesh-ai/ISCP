@@ -88,9 +88,29 @@ CREATE TABLE IF NOT EXISTS iscp_relay.messages (
     queued_at timestamptz NOT NULL DEFAULT now(),
     expires_at timestamptz NOT NULL,
     delivered_at timestamptz,
+    delivery_claimed_until timestamptz,
+    delivery_attempts integer NOT NULL DEFAULT 0,
     CHECK (priority >= 0 AND priority <= 9),
+    CONSTRAINT chk_relay_messages_delivery_attempts CHECK (delivery_attempts >= 0),
     UNIQUE(domain_id, message_id)
 );
+
+ALTER TABLE iscp_relay.messages
+    ADD COLUMN IF NOT EXISTS delivery_claimed_until timestamptz;
+ALTER TABLE iscp_relay.messages
+    ADD COLUMN IF NOT EXISTS delivery_attempts integer NOT NULL DEFAULT 0;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'chk_relay_messages_delivery_attempts'
+          AND conrelid = 'iscp_relay.messages'::regclass
+    ) THEN
+        ALTER TABLE iscp_relay.messages
+            ADD CONSTRAINT chk_relay_messages_delivery_attempts CHECK (delivery_attempts >= 0);
+    END IF;
+END $$;
 
 CREATE TABLE IF NOT EXISTS iscp_relay.delivery_receipts (
     id uuid PRIMARY KEY,
@@ -123,6 +143,7 @@ CREATE INDEX IF NOT EXISTS idx_relay_access_expiry ON iscp_relay.access_tokens(d
 CREATE INDEX IF NOT EXISTS idx_relay_refresh_expiry ON iscp_relay.refresh_tokens(domain_id, expires_at) WHERE revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_relay_pop_replay_expiry ON iscp_relay.pop_replay_cache(domain_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_relay_messages_recipient ON iscp_relay.messages(domain_id, recipient_device_id, priority DESC, queued_at);
+CREATE INDEX IF NOT EXISTS idx_relay_messages_pending ON iscp_relay.messages(domain_id, recipient_device_id, delivery_claimed_until, priority DESC, queued_at) WHERE delivered_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_relay_messages_expiry ON iscp_relay.messages(domain_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_relay_audit_domain_created ON iscp_relay.audit_log(domain_id, created_at);
 

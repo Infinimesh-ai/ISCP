@@ -181,6 +181,10 @@ The gate writes reproducible local evidence under `dist/` and
 `conformance/report.json`. Those files are generated artifacts and are ignored
 by Git.
 
+The PostgreSQL gate covers durable proof nonce replay rejection and persistent
+Relay queue claim/lease behavior, which are required for multi-instance or
+restart-tolerant deployments.
+
 Windows users can run the equivalent `.ps1` scripts from PowerShell.
 
 ## Non-Goals

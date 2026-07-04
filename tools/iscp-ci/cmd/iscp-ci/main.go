@@ -15,6 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/Infinimesh-ai/ISCP/pkg/server/postgres"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/repository"
 )
 
@@ -215,6 +216,7 @@ type postgresSummary struct {
 	DSNConfigured bool     `json:"dsn_configured"`
 	CheckedTables []string `json:"checked_tables"`
 	ReplayChecks  []string `json:"replay_checks"`
+	QueueChecks   []string `json:"queue_checks"`
 	Errors        []string `json:"errors"`
 }
 
@@ -702,6 +704,7 @@ func validatePostgres(root *os.Root) error {
 		"iscp_trust.signing_keys",
 	}
 	replayChecks := []string{}
+	queueChecks := []string{}
 	if dsn == "" {
 		errorsOut = append(errorsOut, "ISCP_DATABASE_URL is required")
 	} else {
@@ -740,6 +743,12 @@ func validatePostgres(root *os.Root) error {
 			} else {
 				replayChecks = append(replayChecks, "trust proof nonce replay rejected")
 			}
+			checks, err := assertRelayPersistentQueue(ctx, relayRepo, now)
+			if err != nil {
+				errorsOut = append(errorsOut, err.Error())
+			} else {
+				queueChecks = append(queueChecks, checks...)
+			}
 		}
 	}
 	status := "pass"
@@ -753,6 +762,7 @@ func validatePostgres(root *os.Root) error {
 		DSNConfigured: dsn != "",
 		CheckedTables: checkedTables,
 		ReplayChecks:  replayChecks,
+		QueueChecks:   queueChecks,
 		Errors:        errorsOut,
 	}
 	if err := writeJSON(root, "dist/postgres-check.json", summary); err != nil {
@@ -781,6 +791,73 @@ func assertReplayNonce(name string, use func() (bool, error)) error {
 		return fmt.Errorf("%s replay nonce accepted duplicate", name)
 	}
 	return nil
+}
+
+func assertRelayPersistentQueue(ctx context.Context, repo repository.RelayRepository, now time.Time) ([]string, error) {
+	domainID := repository.DomainID("local")
+	suffix := fmt.Sprintf("%d", now.UnixNano())
+	messageID := "postgres-check-msg-" + suffix
+	recipientID := "postgres-check-recipient-" + suffix
+	uuid, err := postgres.NewUUIDv7Like(now)
+	if err != nil {
+		return nil, fmt.Errorf("relay queue uuid generation failed: %w", err)
+	}
+	raw := []byte(fmt.Sprintf(`{"type":"iscp.secure_envelope.v2","message_id":%q}`, messageID))
+	if err := repo.StoreMessage(ctx, repository.RelayMessage{
+		ID:                postgres.UUIDString(uuid),
+		DomainID:          domainID,
+		MessageID:         messageID,
+		SenderDeviceID:    "postgres-check-sender",
+		RecipientDeviceID: recipientID,
+		SessionID:         "postgres-check-session",
+		PayloadType:       "text",
+		RouteMetadata:     []byte(`{"ttl_seconds":60,"priority":1}`),
+		EnvelopeRaw:       raw,
+		EnvelopeCanonical: raw,
+		Priority:          1,
+		QueuedAt:          now,
+		ExpiresAt:         now.Add(10 * time.Minute),
+	}); err != nil {
+		return nil, fmt.Errorf("relay queue store failed: %w", err)
+	}
+	first, err := repo.ClaimPendingMessagesFor(ctx, domainID, recipientID, now, time.Minute, 1)
+	if err != nil {
+		return nil, fmt.Errorf("relay queue first claim failed: %w", err)
+	}
+	if len(first) != 1 || first[0].MessageID != messageID || string(first[0].EnvelopeRaw) != string(raw) {
+		return nil, fmt.Errorf("relay queue first claim returned unexpected messages")
+	}
+	second, err := repo.ClaimPendingMessagesFor(ctx, domainID, recipientID, now, time.Minute, 1)
+	if err != nil {
+		return nil, fmt.Errorf("relay queue duplicate claim failed: %w", err)
+	}
+	if len(second) != 0 {
+		return nil, fmt.Errorf("relay queue duplicate claim returned leased message")
+	}
+	retryAt := now.Add(2 * time.Minute)
+	retry, err := repo.ClaimPendingMessagesFor(ctx, domainID, recipientID, retryAt, time.Minute, 1)
+	if err != nil {
+		return nil, fmt.Errorf("relay queue retry claim failed: %w", err)
+	}
+	if len(retry) != 1 || retry[0].MessageID != messageID {
+		return nil, fmt.Errorf("relay queue retry claim did not return leased message after expiry")
+	}
+	if err := repo.MarkMessageDelivered(ctx, domainID, messageID, retryAt); err != nil {
+		return nil, fmt.Errorf("relay queue delivery mark failed: %w", err)
+	}
+	afterDelivered, err := repo.ClaimPendingMessagesFor(ctx, domainID, recipientID, retryAt.Add(time.Minute), time.Minute, 1)
+	if err != nil {
+		return nil, fmt.Errorf("relay queue post-delivery claim failed: %w", err)
+	}
+	if len(afterDelivered) != 0 {
+		return nil, fmt.Errorf("relay queue returned delivered message")
+	}
+	return []string{
+		"relay persistent queue claimed stored message",
+		"relay persistent queue rejected duplicate active lease",
+		"relay persistent queue retried after lease expiry",
+		"relay persistent queue suppressed delivered message",
+	}, nil
 }
 
 func extractNormativeRequirements(content string) []string {

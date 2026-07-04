@@ -42,6 +42,7 @@ type Config struct {
 }
 
 const accessProofHeader = "X-ISCP-Access-Proof"
+const relayMaxQueuedBytes = 1 << 20
 
 type Server struct {
 	cfg         Config
@@ -118,7 +119,7 @@ func New(cfg Config) (*Server, error) {
 		mux:         http.NewServeMux(),
 		limiter:     ratelimit.New(120, time.Minute),
 		replay:      replay.NewCache(),
-		queue:       queue.New(1 << 20),
+		queue:       queue.New(relayMaxQueuedBytes),
 		repo:        repo,
 		upgrader:    websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return originAllowed(r, cfg.AllowedOrigins, cfg.BaseURL, cfg.WebSocketURL) }},
 		devices:     map[string]identity.DeviceIdentity{},
@@ -399,18 +400,6 @@ func (s *Server) envelopes(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now().UTC()
 	expiresAt := now.Add(time.Duration(meta.Route.TTLSeconds) * time.Second)
-	if !s.queue.Enqueue(queue.Message{
-		DomainID:          meta.DomainID,
-		MessageID:         meta.MessageID,
-		SenderDeviceID:    meta.SenderDeviceID,
-		RecipientDeviceID: meta.RecipientDeviceID,
-		Envelope:          raw,
-		Priority:          meta.Route.Priority,
-		ExpiresAt:         expiresAt,
-	}, now) {
-		httpx.WriteError(w, http.StatusRequestEntityTooLarge, iscperrors.New(iscperrors.CodeEnvelopeInvalid, "message too large"))
-		return
-	}
 	receiptID := "receipt-" + meta.MessageID
 	receipt := map[string]any{
 		"type":       "iscp.delivery_receipt.v2",
@@ -422,6 +411,10 @@ func (s *Server) envelopes(w http.ResponseWriter, r *http.Request) {
 		"issued_at":  now,
 	}
 	if s.repo != nil {
+		if len(raw) > relayMaxQueuedBytes {
+			httpx.WriteError(w, http.StatusRequestEntityTooLarge, iscperrors.New(iscperrors.CodeEnvelopeInvalid, "message too large"))
+			return
+		}
 		routeRaw, _ := json.Marshal(meta.Route)
 		msgID, err := postgres.NewUUIDv7Like(now)
 		if err != nil {
@@ -471,6 +464,17 @@ func (s *Server) envelopes(w http.ResponseWriter, r *http.Request) {
 			httpx.WriteError(w, http.StatusInternalServerError, err)
 			return
 		}
+	} else if !s.queue.Enqueue(queue.Message{
+		DomainID:          meta.DomainID,
+		MessageID:         meta.MessageID,
+		SenderDeviceID:    meta.SenderDeviceID,
+		RecipientDeviceID: meta.RecipientDeviceID,
+		Envelope:          raw,
+		Priority:          meta.Route.Priority,
+		ExpiresAt:         expiresAt,
+	}, now) {
+		httpx.WriteError(w, http.StatusRequestEntityTooLarge, iscperrors.New(iscperrors.CodeEnvelopeInvalid, "message too large"))
+		return
 	}
 	httpx.WriteJSON(w, http.StatusAccepted, receipt)
 }
@@ -529,7 +533,11 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 	})
 	defer s.closeConnection(connectionID)
 	_ = c.WriteJSON(map[string]string{"state": "ready"})
-	messages := s.queue.DequeueFor(id.DomainID, id.DeviceID, time.Now().UTC(), 100)
+	messages, err := s.dequeueMessages(r.Context(), id.DomainID, id.DeviceID, time.Now().UTC(), 100)
+	if err != nil {
+		_ = c.WriteJSON(map[string]string{"state": "closed", "error": "message dequeue failed"})
+		return
+	}
 	delivered := 0
 	for _, msg := range messages {
 		if err := c.WriteJSON(map[string]any{"state": "message", "message_id": msg.MessageID, "envelope": json.RawMessage(msg.Envelope)}); err != nil {
@@ -577,7 +585,57 @@ func (s *Server) adminMessages(w http.ResponseWriter, r *http.Request) {
 	if !s.requireAdmin(w, r) {
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, s.queue.SnapshotMetadata(time.Now().UTC()))
+	now := time.Now().UTC()
+	if s.repo != nil {
+		messages, err := s.repo.ListPendingMessages(r.Context(), repository.DomainID(s.cfg.DomainID), now, 500)
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, err)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, relayMessageMetadata(messages))
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.queue.SnapshotMetadata(now))
+}
+
+func (s *Server) dequeueMessages(ctx context.Context, domainID, recipientDeviceID string, now time.Time, limit int) ([]queue.Message, error) {
+	if s.repo == nil {
+		return s.queue.DequeueFor(domainID, recipientDeviceID, now, limit), nil
+	}
+	claimed, err := s.repo.ClaimPendingMessagesFor(ctx, repository.DomainID(domainID), recipientDeviceID, now, time.Minute, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]queue.Message, 0, len(claimed))
+	for _, msg := range claimed {
+		out = append(out, queue.Message{
+			DomainID:          string(msg.DomainID),
+			MessageID:         msg.MessageID,
+			SenderDeviceID:    msg.SenderDeviceID,
+			RecipientDeviceID: msg.RecipientDeviceID,
+			Envelope:          msg.EnvelopeRaw,
+			Priority:          msg.Priority,
+			QueuedAt:          msg.QueuedAt,
+			ExpiresAt:         msg.ExpiresAt,
+		})
+	}
+	return out, nil
+}
+
+func relayMessageMetadata(messages []repository.RelayMessage) []queue.MessageMetadata {
+	out := make([]queue.MessageMetadata, 0, len(messages))
+	for _, msg := range messages {
+		out = append(out, queue.MessageMetadata{
+			DomainID:          string(msg.DomainID),
+			MessageID:         msg.MessageID,
+			SenderDeviceID:    msg.SenderDeviceID,
+			RecipientDeviceID: msg.RecipientDeviceID,
+			Priority:          msg.Priority,
+			QueuedAt:          msg.QueuedAt,
+			ExpiresAt:         msg.ExpiresAt,
+		})
+	}
+	return out
 }
 
 func (s *Server) issueCredentials(ctx context.Context, domainID, deviceID string) (credential, credential, error) {

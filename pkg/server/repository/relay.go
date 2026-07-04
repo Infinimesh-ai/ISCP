@@ -2,9 +2,12 @@ package repository
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 )
 
 type RelayDevice struct {
@@ -248,6 +251,73 @@ expires_at = EXCLUDED.expires_at`,
 	return err
 }
 
+func (r RelayRepository) ClaimPendingMessagesFor(ctx context.Context, domainID DomainID, recipientDeviceID string, now time.Time, lease time.Duration, limit int) ([]RelayMessage, error) {
+	if err := RequireDomain(domainID); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(recipientDeviceID) == "" {
+		return nil, iscperrors.New(iscperrors.CodeStorageInvalid, "recipient device id is required")
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+	if lease <= 0 {
+		return nil, iscperrors.New(iscperrors.CodeStorageInvalid, "delivery lease must be positive")
+	}
+	rows, err := r.db.Query(ctx, `
+WITH claim AS (
+    SELECT id
+    FROM iscp_relay.messages
+    WHERE domain_id=$1
+      AND recipient_device_id=$2
+      AND delivered_at IS NULL
+      AND expires_at > $3
+      AND (delivery_claimed_until IS NULL OR delivery_claimed_until <= $3)
+    ORDER BY priority DESC, queued_at
+    LIMIT $4
+    FOR UPDATE SKIP LOCKED
+)
+UPDATE iscp_relay.messages AS m
+SET delivery_claimed_until=$5,
+    delivery_attempts=delivery_attempts + 1
+FROM claim
+WHERE m.id=claim.id
+RETURNING m.id, m.domain_id, m.message_id, m.sender_device_id, m.recipient_device_id,
+          m.session_id, m.payload_type, m.route_metadata::text, m.envelope_raw,
+          m.envelope_canonical, m.priority, m.queued_at, m.expires_at`,
+		string(domainID), recipientDeviceID, now, limit, now.Add(lease))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRelayMessages(rows)
+}
+
+func (r RelayRepository) ListPendingMessages(ctx context.Context, domainID DomainID, now time.Time, limit int) ([]RelayMessage, error) {
+	if err := RequireDomain(domainID); err != nil {
+		return nil, err
+	}
+	if limit <= 0 {
+		return nil, nil
+	}
+	rows, err := r.db.Query(ctx, `
+SELECT id, domain_id, message_id, sender_device_id, recipient_device_id,
+       session_id, payload_type, route_metadata::text, envelope_raw,
+       envelope_canonical, priority, queued_at, expires_at
+FROM iscp_relay.messages
+WHERE domain_id=$1
+  AND delivered_at IS NULL
+  AND expires_at > $2
+ORDER BY priority DESC, queued_at
+LIMIT $3`,
+		string(domainID), now, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanRelayMessages(rows)
+}
+
 func (r RelayRepository) StoreReceipt(ctx context.Context, receipt RelayReceipt) error {
 	if err := RequireDomain(receipt.DomainID); err != nil {
 		return err
@@ -277,10 +347,51 @@ func (r RelayRepository) MarkMessageDelivered(ctx context.Context, domainID Doma
 	if err := RequireDomain(domainID); err != nil {
 		return err
 	}
-	_, err := r.db.Exec(ctx, `
+	if _, err := r.db.Exec(ctx, `
 UPDATE iscp_relay.messages
-SET delivered_at=$3
+SET delivered_at=$3,
+    delivery_claimed_until=NULL
 WHERE domain_id=$1 AND message_id=$2`,
-		string(domainID), messageID, now)
+		string(domainID), messageID, now); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(ctx, `
+UPDATE iscp_relay.delivery_receipts
+SET status='delivered_to_connection'
+WHERE domain_id=$1 AND message_id=$2 AND status='queued'`,
+		string(domainID), messageID)
 	return err
+}
+
+func scanRelayMessages(rows pgx.Rows) ([]RelayMessage, error) {
+	out := []RelayMessage{}
+	for rows.Next() {
+		var msg RelayMessage
+		var domain string
+		var routeMetadata string
+		if err := rows.Scan(
+			&msg.ID,
+			&domain,
+			&msg.MessageID,
+			&msg.SenderDeviceID,
+			&msg.RecipientDeviceID,
+			&msg.SessionID,
+			&msg.PayloadType,
+			&routeMetadata,
+			&msg.EnvelopeRaw,
+			&msg.EnvelopeCanonical,
+			&msg.Priority,
+			&msg.QueuedAt,
+			&msg.ExpiresAt,
+		); err != nil {
+			return nil, err
+		}
+		msg.DomainID = DomainID(domain)
+		msg.RouteMetadata = []byte(routeMetadata)
+		out = append(out, msg)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
 }

@@ -72,3 +72,6 @@ connections reject cross-origin browser upgrades unless the origin matches
 Relay envelope submission requires an access credential in
 `Authorization: Bearer <access-token>`, and the credential device must match the
 envelope sender. Refresh credentials are single-use and are revoked when rotated.
+With `ISCP_DATABASE_URL` set, Relay stores offline envelopes in PostgreSQL and
+claims them with delivery leases during WebSocket delivery, so queued messages
+survive process restarts and rolling deployments.
