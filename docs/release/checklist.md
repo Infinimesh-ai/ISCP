@@ -34,6 +34,8 @@ P0 case, empty P0 suite, placeholder report, or undocumented residual risk.
 - `./scripts/generate-openapi.sh`
 - `./scripts/generate-schemas.sh`
 - `./scripts/traceability.sh`
+- `./scripts/postgres-check.sh`
+- `./scripts/helm-check.sh`
 - `./scripts/sbom.sh`
 - `./scripts/release-gate.sh`
 
@@ -51,6 +53,8 @@ Release validation writes local evidence under:
 - `dist/openapi-check.json`
 - `dist/schema-check.json`
 - `dist/traceability-check.json`
+- `dist/postgres-check.json`
+- `dist/helm-check.json`
 - `dist/sbom.cdx.json`
 
 These files are generated artifacts. They are intentionally ignored by Git and

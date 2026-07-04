@@ -215,7 +215,7 @@ func (s *Server) bindSelf(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.verifyProof(req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
+	if err := s.verifyProof(r.Context(), req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
@@ -239,7 +239,7 @@ func (s *Server) registerWithTicket(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.verifyProof(req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
+	if err := s.verifyProof(r.Context(), req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
@@ -513,7 +513,7 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		_ = c.WriteJSON(map[string]string{"state": "closed", "error": "access revoked or unknown"})
 		return
 	}
-	if err := s.verifyProof(id, proof, s.cfg.RelayID, challenge, time.Minute); err != nil {
+	if err := s.verifyProof(r.Context(), id, proof, s.cfg.RelayID, challenge, time.Minute); err != nil {
 		_ = c.WriteJSON(map[string]string{"state": "closed", "error": "proof failed"})
 		return
 	}
@@ -625,7 +625,7 @@ func (s *Server) bindIdentity(w http.ResponseWriter, r *http.Request, id identit
 	httpx.WriteJSON(w, http.StatusOK, map[string]any{"access": access, "refresh": refresh})
 }
 
-func (s *Server) verifyProof(id identity.DeviceIdentity, proof identity.DeviceProof, audience, challenge string, ttl time.Duration) error {
+func (s *Server) verifyProof(ctx context.Context, id identity.DeviceIdentity, proof identity.DeviceProof, audience, challenge string, ttl time.Duration) error {
 	if strings.TrimSpace(proof.Nonce) == "" {
 		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce is required")
 	}
@@ -634,7 +634,18 @@ func (s *Server) verifyProof(id identity.DeviceIdentity, proof identity.DevicePr
 		return err
 	}
 	key := strings.Join([]string{proof.DomainID, proof.DeviceID, proof.Audience, proof.Nonce}, "\x00")
-	if !s.replay.Use(key, proof.IssuedAt.Add(ttl), now) {
+	expiresAt := proof.IssuedAt.Add(ttl)
+	if s.repo != nil {
+		used, err := s.repo.UseProofNonce(ctx, repository.DomainID(proof.DomainID), proof.DeviceID, proof.Audience, proof.Nonce, expiresAt, now)
+		if err != nil {
+			return err
+		}
+		if !used {
+			return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce replay detected")
+		}
+		return nil
+	}
+	if !s.replay.Use(key, expiresAt, now) {
 		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce replay detected")
 	}
 	return nil
@@ -701,7 +712,7 @@ func (s *Server) verifyAccessProof(r *http.Request, cred credential, accessHash 
 		return iscperrors.New(iscperrors.CodeAccessInvalid, "access proof identity is unknown")
 	}
 	challenge := accessProofChallenge(r.Method, r.URL.Path, accessHash)
-	return s.verifyProof(id, proof, s.cfg.RelayID, challenge, time.Minute)
+	return s.verifyProof(r.Context(), id, proof, s.cfg.RelayID, challenge, time.Minute)
 }
 
 func (s *Server) lookupIdentity(ctx context.Context, domainID, deviceID string) (identity.DeviceIdentity, bool, error) {

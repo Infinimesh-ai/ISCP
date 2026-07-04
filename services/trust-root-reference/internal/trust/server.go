@@ -194,7 +194,7 @@ func (s *Server) submitDevice(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := s.verifyProof(req.Identity, req.Proof, s.cfg.TrustRootID, req.Proof.Challenge, 5*time.Minute); err != nil {
+	if err := s.verifyProof(r.Context(), req.Identity, req.Proof, s.cfg.TrustRootID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
@@ -535,7 +535,7 @@ func (s *Server) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]string{"trust_root_id": s.cfg.TrustRootID})
 }
 
-func (s *Server) verifyProof(id identity.DeviceIdentity, proof identity.DeviceProof, audience, challenge string, ttl time.Duration) error {
+func (s *Server) verifyProof(ctx context.Context, id identity.DeviceIdentity, proof identity.DeviceProof, audience, challenge string, ttl time.Duration) error {
 	if strings.TrimSpace(proof.Nonce) == "" {
 		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce is required")
 	}
@@ -544,7 +544,18 @@ func (s *Server) verifyProof(id identity.DeviceIdentity, proof identity.DevicePr
 		return err
 	}
 	key := strings.Join([]string{proof.DomainID, proof.DeviceID, proof.Audience, proof.Nonce}, "\x00")
-	if !s.replay.Use(key, proof.IssuedAt.Add(ttl), now) {
+	expiresAt := proof.IssuedAt.Add(ttl)
+	if s.repo != nil {
+		used, err := s.repo.UseProofNonce(ctx, repository.DomainID(proof.DomainID), proof.DeviceID, proof.Audience, proof.Nonce, expiresAt, now)
+		if err != nil {
+			return err
+		}
+		if !used {
+			return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce replay detected")
+		}
+		return nil
+	}
+	if !s.replay.Use(key, expiresAt, now) {
 		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce replay detected")
 	}
 	return nil

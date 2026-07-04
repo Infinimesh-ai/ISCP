@@ -121,6 +121,7 @@ CREATE TABLE IF NOT EXISTS iscp_relay.audit_log (
 CREATE INDEX IF NOT EXISTS idx_relay_devices_domain_status ON iscp_relay.devices(domain_id, status);
 CREATE INDEX IF NOT EXISTS idx_relay_access_expiry ON iscp_relay.access_tokens(domain_id, expires_at) WHERE revoked_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_relay_refresh_expiry ON iscp_relay.refresh_tokens(domain_id, expires_at) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_relay_pop_replay_expiry ON iscp_relay.pop_replay_cache(domain_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_relay_messages_recipient ON iscp_relay.messages(domain_id, recipient_device_id, priority DESC, queued_at);
 CREATE INDEX IF NOT EXISTS idx_relay_messages_expiry ON iscp_relay.messages(domain_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_relay_audit_domain_created ON iscp_relay.audit_log(domain_id, created_at);
@@ -181,6 +182,14 @@ CREATE TABLE IF NOT EXISTS iscp_trust.revocations (
     UNIQUE(domain_id, subject_type, subject_id, revocation_epoch)
 );
 
+CREATE TABLE IF NOT EXISTS iscp_trust.pop_replay_cache (
+    domain_id text NOT NULL,
+    device_id text NOT NULL,
+    nonce text NOT NULL,
+    expires_at timestamptz NOT NULL,
+    PRIMARY KEY(domain_id, device_id, nonce)
+);
+
 CREATE TABLE IF NOT EXISTS iscp_trust.signing_keys (
     id uuid PRIMARY KEY,
     domain_id text NOT NULL,
@@ -221,6 +230,7 @@ CREATE TABLE IF NOT EXISTS iscp_trust.audit_log (
 CREATE INDEX IF NOT EXISTS idx_trust_devices_domain_status ON iscp_trust.devices(domain_id, status);
 CREATE INDEX IF NOT EXISTS idx_trust_grants_subject ON iscp_trust.grants(domain_id, subject_device_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_trust_revocations_subject ON iscp_trust.revocations(domain_id, subject_type, subject_id);
+CREATE INDEX IF NOT EXISTS idx_trust_pop_replay_expiry ON iscp_trust.pop_replay_cache(domain_id, expires_at);
 CREATE INDEX IF NOT EXISTS idx_trust_keys_state ON iscp_trust.signing_keys(domain_id, state, key_use);
 CREATE INDEX IF NOT EXISTS idx_trust_audit_domain_created ON iscp_trust.audit_log(domain_id, created_at);
 

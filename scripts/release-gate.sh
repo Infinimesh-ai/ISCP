@@ -165,6 +165,7 @@ start_compose_services() {
 
     export ISCP_RELAY_ENDPOINT="http://${runner_address}:${relay_port}"
     export ISCP_TRUST_ENDPOINT="http://${runner_address}:${trust_port}"
+    export ISCP_DATABASE_URL="postgres://iscp:iscp-local-password@${probe_address}:${postgres_port}/iscp?sslmode=disable"
 
     compose_details_json="$(printf '{"compose_file":"deploy/docker-compose/docker-compose.yaml","services":["postgres","relay","trust-root"],"bind_address":%s,"postgres_port":%s,"host_probe":{"relay_endpoint":%s,"trust_endpoint":%s},"conformance":{"go_execution":%s,"relay_endpoint":%s,"trust_endpoint":%s}}' \
         "$(json_string "${bind_address}")" \
@@ -269,6 +270,7 @@ write_summary() {
 }
 
 run_compose_gate || true
+if [[ "${failed}" -eq 0 ]]; then run_gate "postgres-check" "./scripts/postgres-check.sh" ./scripts/postgres-check.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "test" "./scripts/test.sh" ./scripts/test.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "conformance" "./scripts/conformance.sh" ./scripts/conformance.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "secret-scan" "./scripts/secret-scan.sh" ./scripts/secret-scan.sh || true; fi
@@ -277,6 +279,7 @@ if [[ "${failed}" -eq 0 ]]; then run_gate "gosec" "./scripts/gosec.sh" ./scripts
 if [[ "${failed}" -eq 0 ]]; then run_gate "generate-openapi" "./scripts/generate-openapi.sh" ./scripts/generate-openapi.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "generate-schemas" "./scripts/generate-schemas.sh" ./scripts/generate-schemas.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "traceability" "./scripts/traceability.sh" ./scripts/traceability.sh || true; fi
+if [[ "${failed}" -eq 0 ]]; then run_gate "helm-check" "./scripts/helm-check.sh" ./scripts/helm-check.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "sbom" "./scripts/sbom.sh" ./scripts/sbom.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "conformance-release-validation" "go" invoke_go run ./tools/iscp-cli/cmd/iscp conformance validate-report --release --output conformance/report.json || true; fi
 

@@ -169,8 +169,9 @@ go install github.com/Infinimesh-ai/ISCP/tools/iscp-cli/cmd/iscp@latest
 ## Release Validation
 
 The full local release gate runs tests, conformance, secret scanning,
-vulnerability scanning, static security checks, OpenAPI/schema validation, SBOM
-generation, service startup, and release-report validation:
+vulnerability scanning, static security checks, OpenAPI/schema/traceability
+validation, PostgreSQL and Helm validation, SBOM generation, service startup,
+and release-report validation:
 
 ```bash
 ./scripts/release-gate.sh

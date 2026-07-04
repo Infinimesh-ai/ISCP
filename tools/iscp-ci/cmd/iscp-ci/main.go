@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,6 +12,10 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/Infinimesh-ai/ISCP/pkg/server/repository"
 )
 
 type schemaManifestEntry struct {
@@ -134,7 +139,7 @@ type cyclonedxLibrary struct {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: iscp-ci <generate-schemas|generate-openapi|traceability|sbom>")
+		fmt.Fprintln(os.Stderr, "usage: iscp-ci <generate-schemas|generate-openapi|traceability|helm-check|postgres-check|sbom>")
 		os.Exit(2)
 	}
 
@@ -157,6 +162,10 @@ func main() {
 		err = generateOpenAPI(root)
 	case "traceability":
 		err = validateTraceability(root)
+	case "helm-check":
+		err = validateHelm(root, rootPath)
+	case "postgres-check":
+		err = validatePostgres(root)
 	case "sbom":
 		err = generateSBOM(root)
 	default:
@@ -188,6 +197,25 @@ type traceabilitySummary struct {
 	DuplicateIDs        []string          `json:"duplicate_ids"`
 	Rows                []traceabilityRow `json:"rows"`
 	Errors              []string          `json:"errors"`
+}
+
+type helmSummary struct {
+	Type         string   `json:"type"`
+	GeneratedAt  string   `json:"generated_at"`
+	ChartDir     string   `json:"chart_dir"`
+	Status       string   `json:"status"`
+	CheckedFiles []string `json:"checked_files"`
+	Errors       []string `json:"errors"`
+}
+
+type postgresSummary struct {
+	Type          string   `json:"type"`
+	GeneratedAt   string   `json:"generated_at"`
+	Status        string   `json:"status"`
+	DSNConfigured bool     `json:"dsn_configured"`
+	CheckedTables []string `json:"checked_tables"`
+	ReplayChecks  []string `json:"replay_checks"`
+	Errors        []string `json:"errors"`
 }
 
 func repoRoot() (string, error) {
@@ -602,6 +630,159 @@ func validateTraceability(root *os.Root) error {
 	return nil
 }
 
+func validateHelm(root *os.Root, rootPath string) error {
+	chartDir := "deploy/helm/iscp"
+	checkedFiles := []string{
+		"deploy/helm/iscp/values.yaml",
+		"deploy/helm/iscp/templates/relay-deployment.yaml",
+		"deploy/helm/iscp/templates/trust-deployment.yaml",
+		"deploy/helm/iscp/templates/relay-service.yaml",
+		"deploy/helm/iscp/templates/trust-service.yaml",
+	}
+	errorsOut := []string{}
+	for _, name := range checkedFiles {
+		if _, err := root.Stat(name); err != nil {
+			errorsOut = append(errorsOut, name+" is missing")
+		}
+	}
+	values := readText(root, "deploy/helm/iscp/values.yaml", &errorsOut)
+	relay := readText(root, "deploy/helm/iscp/templates/relay-deployment.yaml", &errorsOut)
+	trust := readText(root, "deploy/helm/iscp/templates/trust-deployment.yaml", &errorsOut)
+	for _, check := range []struct {
+		name    string
+		content string
+		want    []string
+	}{
+		{"values", values, []string{"profile: local-lab", "existingSecret", "allowedOrigins", "externalURL"}},
+		{"relay deployment", relay, []string{"fail \"production profile requires admin.existingSecret\"", "fail \"production profile requires relay.allowedOrigins\"", "fail \"production profile requires postgres.externalURL or postgres.existingSecret\"", "ISCP_ADMIN_TOKEN", "ISCP_DATABASE_URL", "ISCP_ALLOWED_ORIGINS", "ISCP_RELAY_BASE_URL", "ISCP_RELAY_WS_URL"}},
+		{"trust deployment", trust, []string{"fail \"production profile requires admin.existingSecret\"", "fail \"production profile requires postgres.externalURL or postgres.existingSecret\"", "ISCP_ADMIN_TOKEN", "ISCP_DATABASE_URL", "ISCP_TRUST_BASE_URL"}},
+	} {
+		for _, want := range check.want {
+			if !strings.Contains(check.content, want) {
+				errorsOut = append(errorsOut, check.name+" must contain "+want)
+			}
+		}
+	}
+	status := "pass"
+	if len(errorsOut) > 0 {
+		status = "fail"
+	}
+	summary := helmSummary{
+		Type:         "iscp.helm.validation.v2",
+		GeneratedAt:  time.Now().UTC().Format(time.RFC3339Nano),
+		ChartDir:     chartDir,
+		Status:       status,
+		CheckedFiles: checkedFiles,
+		Errors:       errorsOut,
+	}
+	if err := writeJSON(root, "dist/helm-check.json", summary); err != nil {
+		return err
+	}
+	if len(errorsOut) > 0 {
+		return errors.New("Helm validation failed; see dist/helm-check.json")
+	}
+	fmt.Println("Helm validation passed; see dist/helm-check.json")
+	return nil
+}
+
+func validatePostgres(root *os.Root) error {
+	dsn := strings.TrimSpace(os.Getenv("ISCP_DATABASE_URL"))
+	errorsOut := []string{}
+	checkedTables := []string{
+		"iscp_relay.devices",
+		"iscp_relay.access_tokens",
+		"iscp_relay.refresh_tokens",
+		"iscp_relay.pop_replay_cache",
+		"iscp_relay.messages",
+		"iscp_relay.delivery_receipts",
+		"iscp_trust.devices",
+		"iscp_trust.grants",
+		"iscp_trust.revocations",
+		"iscp_trust.pop_replay_cache",
+		"iscp_trust.signing_keys",
+	}
+	replayChecks := []string{}
+	if dsn == "" {
+		errorsOut = append(errorsOut, "ISCP_DATABASE_URL is required")
+	} else {
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+		pool, err := pgxpool.New(ctx, dsn)
+		if err != nil {
+			errorsOut = append(errorsOut, "connect failed: "+err.Error())
+		} else {
+			defer pool.Close()
+			for _, table := range checkedTables {
+				var exists bool
+				if err := pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil {
+					errorsOut = append(errorsOut, table+" check failed: "+err.Error())
+					continue
+				}
+				if !exists {
+					errorsOut = append(errorsOut, table+" is missing")
+				}
+			}
+			now := time.Now().UTC()
+			nonce := fmt.Sprintf("postgres-check-%d", now.UnixNano())
+			relayRepo := repository.NewRelayRepository(pool)
+			if err := assertReplayNonce("relay", func() (bool, error) {
+				return relayRepo.UseProofNonce(ctx, repository.DomainID("local"), "postgres-check-device", "relay-local", nonce, now.Add(time.Minute), now)
+			}); err != nil {
+				errorsOut = append(errorsOut, err.Error())
+			} else {
+				replayChecks = append(replayChecks, "relay proof nonce replay rejected")
+			}
+			trustRepo := repository.NewTrustRepository(pool)
+			if err := assertReplayNonce("trust", func() (bool, error) {
+				return trustRepo.UseProofNonce(ctx, repository.DomainID("local"), "postgres-check-device", "trust-local", nonce, now.Add(time.Minute), now)
+			}); err != nil {
+				errorsOut = append(errorsOut, err.Error())
+			} else {
+				replayChecks = append(replayChecks, "trust proof nonce replay rejected")
+			}
+		}
+	}
+	status := "pass"
+	if len(errorsOut) > 0 {
+		status = "fail"
+	}
+	summary := postgresSummary{
+		Type:          "iscp.postgres.validation.v2",
+		GeneratedAt:   time.Now().UTC().Format(time.RFC3339Nano),
+		Status:        status,
+		DSNConfigured: dsn != "",
+		CheckedTables: checkedTables,
+		ReplayChecks:  replayChecks,
+		Errors:        errorsOut,
+	}
+	if err := writeJSON(root, "dist/postgres-check.json", summary); err != nil {
+		return err
+	}
+	if len(errorsOut) > 0 {
+		return errors.New("PostgreSQL validation failed; see dist/postgres-check.json")
+	}
+	fmt.Println("PostgreSQL validation passed; see dist/postgres-check.json")
+	return nil
+}
+
+func assertReplayNonce(name string, use func() (bool, error)) error {
+	first, err := use()
+	if err != nil {
+		return fmt.Errorf("%s replay nonce first use failed: %w", name, err)
+	}
+	if !first {
+		return fmt.Errorf("%s replay nonce first use was rejected", name)
+	}
+	second, err := use()
+	if err != nil {
+		return fmt.Errorf("%s replay nonce second use failed: %w", name, err)
+	}
+	if second {
+		return fmt.Errorf("%s replay nonce accepted duplicate", name)
+	}
+	return nil
+}
+
 func extractNormativeRequirements(content string) []string {
 	content = strings.ReplaceAll(content, "\r\n", "\n")
 	lines := strings.Split(content, "\n")
@@ -653,6 +834,15 @@ func extractTraceabilityRows(content string, errorsOut *[]string) []traceability
 		})
 	}
 	return rows
+}
+
+func readText(root *os.Root, name string, errorsOut *[]string) string {
+	raw, err := root.ReadFile(name)
+	if err != nil {
+		*errorsOut = append(*errorsOut, name+" cannot be read: "+err.Error())
+		return ""
+	}
+	return string(raw)
 }
 
 func normalizeRequirement(value string) string {

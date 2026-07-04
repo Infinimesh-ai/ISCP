@@ -173,6 +173,7 @@ function Start-ComposeServices {
 
     $env:ISCP_RELAY_ENDPOINT = "http://${runnerAddress}:$relayPort"
     $env:ISCP_TRUST_ENDPOINT = "http://${runnerAddress}:$trustPort"
+    $env:ISCP_DATABASE_URL = "postgres://iscp:iscp-local-password@${probeAddress}:$postgresPort/iscp?sslmode=disable"
 
     return [ordered]@{
         compose_file = "deploy/docker-compose/docker-compose.yaml"
@@ -193,6 +194,7 @@ function Start-ComposeServices {
 
 $gates = @(
     @{ name = "compose-services"; command = "docker compose"; args = @("up", "--build", "--detach", "postgres", "relay", "trust-root") },
+    @{ name = "postgres-check"; command = "./scripts/postgres-check.ps1"; args = @() },
     @{ name = "test"; command = "./scripts/test.ps1"; args = @() },
     @{ name = "conformance"; command = "./scripts/conformance.ps1"; args = @() },
     @{ name = "secret-scan"; command = "./scripts/secret-scan.ps1"; args = @() },
@@ -200,6 +202,8 @@ $gates = @(
     @{ name = "gosec"; command = "./scripts/gosec.ps1"; args = @() },
     @{ name = "generate-openapi"; command = "./scripts/generate-openapi.ps1"; args = @() },
     @{ name = "generate-schemas"; command = "./scripts/generate-schemas.ps1"; args = @() },
+    @{ name = "traceability"; command = "./scripts/traceability.ps1"; args = @() },
+    @{ name = "helm-check"; command = "./scripts/helm-check.ps1"; args = @() },
     @{ name = "sbom"; command = "./scripts/sbom.ps1"; args = @() },
     @{ name = "conformance-release-validation"; command = "go"; args = @("run", "./tools/iscp-cli/cmd/iscp", "conformance", "validate-report", "--release", "--output", "conformance/report.json") }
 )

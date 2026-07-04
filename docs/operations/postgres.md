@@ -7,7 +7,7 @@ ISCP starts from an empty PostgreSQL 18 database.
 - `iscp_relay`: relay devices, access token hashes, refresh credential hashes,
   replay cache, connections, opaque messages, delivery receipts, audit log.
 - `iscp_trust`: trust devices, permissions, grants, revocations, signing keys,
-  policy versions, audit log.
+  proof replay cache, policy versions, audit log.
 
 ## Migration
 
@@ -52,7 +52,7 @@ Cleanup jobs support dry-run mode and metrics. Release deployments should run:
 - expired relay messages
 - expired access tokens
 - expired refresh credentials
-- expired PoP replay cache entries
+- expired Relay and Trust Root PoP replay cache entries
 
 ## Backup and Restore
 

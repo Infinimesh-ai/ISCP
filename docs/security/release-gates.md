@@ -37,6 +37,8 @@ generated conformance report reaches a Go decision.
 ./scripts/generate-openapi.sh
 ./scripts/generate-schemas.sh
 ./scripts/traceability.sh
+./scripts/postgres-check.sh
+./scripts/helm-check.sh
 ./scripts/sbom.sh
 ./scripts/release-gate.sh
 ```
@@ -57,3 +59,8 @@ closed top-level objects, and signature definitions.
 The traceability gate validates that every MUST and MUST NOT in
 `spec/security-baseline.md` is represented in
 `docs/security/traceability.md` with Covered status and evidence.
+
+The PostgreSQL gate validates the Compose database schema and exercises durable
+Relay and Trust Root proof nonce replay rejection. The Helm gate validates the
+chart baseline, production fail-closed settings, service templates, and, when
+`helm` is installed, both local-lab and production rendering.
