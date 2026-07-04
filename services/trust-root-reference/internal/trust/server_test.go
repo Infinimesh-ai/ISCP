@@ -18,6 +18,7 @@ func TestTrustSubmitAuthorizeVerifyAndRevoke(t *testing.T) {
 		DomainID:    "domain-a",
 		TrustRootID: "trust-a",
 		BaseURL:     "http://trust.test",
+		AdminToken:  "admin-test-token",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -49,6 +50,13 @@ func TestTrustSubmitAuthorizeVerifyAndRevoke(t *testing.T) {
 		Permissions: []string{"text"},
 		RelayID:     "relay-a",
 		TTLSeconds:  60,
+	}, http.StatusUnauthorized, nil)
+	postJSONWithAdmin(t, handler, "/v2/trust/devices/authorize", "admin-test-token", authorizeRequest{
+		DeviceID:    device.Identity.DeviceID,
+		Audience:    "peer-a",
+		Permissions: []string{"text"},
+		RelayID:     "relay-a",
+		TTLSeconds:  60,
 	}, http.StatusOK, &auth)
 	if auth.Device.Status != "authorized" || auth.Grant.Signature.Value == "" {
 		t.Fatalf("unexpected auth response %#v", auth)
@@ -66,7 +74,8 @@ func TestTrustSubmitAuthorizeVerifyAndRevoke(t *testing.T) {
 		"relay_id":                "relay-a",
 	}, http.StatusOK, nil)
 
-	postJSON(t, handler, "/v2/trust/devices/revoke", map[string]string{"device_id": device.Identity.DeviceID, "reason": "test"}, http.StatusOK, nil)
+	postJSON(t, handler, "/v2/trust/devices/revoke", map[string]string{"device_id": device.Identity.DeviceID, "reason": "test"}, http.StatusUnauthorized, nil)
+	postJSONWithAdmin(t, handler, "/v2/trust/devices/revoke", "admin-test-token", map[string]string{"device_id": device.Identity.DeviceID, "reason": "test"}, http.StatusOK, nil)
 	postJSON(t, handler, "/v2/trust/grants/verify", map[string]any{
 		"grant":                   auth.Grant,
 		"audience":                "peer-a",
@@ -78,6 +87,10 @@ func TestTrustSubmitAuthorizeVerifyAndRevoke(t *testing.T) {
 }
 
 func postJSON(t *testing.T, handler http.Handler, path string, req any, want int, out any) {
+	postJSONWithAdmin(t, handler, path, "", req, want, out)
+}
+
+func postJSONWithAdmin(t *testing.T, handler http.Handler, path string, adminToken string, req any, want int, out any) {
 	t.Helper()
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -85,6 +98,9 @@ func postJSON(t *testing.T, handler http.Handler, path string, req any, want int
 	}
 	rr := httptest.NewRecorder()
 	httpReq := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
+	if adminToken != "" {
+		httpReq.Header.Set("X-ISCP-Admin-Token", adminToken)
+	}
 	handler.ServeHTTP(rr, httpReq)
 	if rr.Code != want {
 		t.Fatalf("%s status = %d, want %d, body=%s", path, rr.Code, want, rr.Body.String())

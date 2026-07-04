@@ -35,6 +35,7 @@ func main() {
 		BaseURL:     env("ISCP_TRUST_BASE_URL", "http://localhost:8081"),
 		ProfileGate: config.DefaultGate(config.LoadProfileFromEnv(config.ProfileLocalLab)),
 		DB:          db,
+		AdminToken:  os.Getenv("ISCP_ADMIN_TOKEN"),
 	}
 	srv, err := trustsvc.New(cfg)
 	if err != nil {

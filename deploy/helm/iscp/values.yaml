@@ -1,16 +1,31 @@
-profile: production
+profile: local-lab
 domainID: local
 
+admin:
+  existingSecret: ""
+  tokenKey: admin-token
+
 relay:
+  id: relay-local
   image: iscp/relay-reference:0.1.0
   replicas: 1
   port: 8080
+  baseURL: ""
+  webSocketURL: ""
+  allowedOrigins: []
+  service:
+    type: ClusterIP
 
 trustRoot:
+  id: trust-local
   image: iscp/trust-root-reference:0.1.0
   replicas: 1
   port: 8081
+  baseURL: ""
+  service:
+    type: ClusterIP
 
 postgres:
   externalURL: ""
-
+  existingSecret: ""
+  urlKey: database-url

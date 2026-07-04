@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -30,12 +31,14 @@ func main() {
 		defer db.Close()
 	}
 	cfg := relay.Config{
-		DomainID:     env("ISCP_DOMAIN_ID", "local"),
-		RelayID:      env("ISCP_RELAY_ID", "relay-local"),
-		BaseURL:      env("ISCP_RELAY_BASE_URL", "http://localhost:8080"),
-		WebSocketURL: env("ISCP_RELAY_WS_URL", "ws://localhost:8080/v2/relay/connect"),
-		ProfileGate:  config.DefaultGate(config.LoadProfileFromEnv(config.ProfileLocalLab)),
-		DB:           db,
+		DomainID:       env("ISCP_DOMAIN_ID", "local"),
+		RelayID:        env("ISCP_RELAY_ID", "relay-local"),
+		BaseURL:        env("ISCP_RELAY_BASE_URL", "http://localhost:8080"),
+		WebSocketURL:   env("ISCP_RELAY_WS_URL", "ws://localhost:8080/v2/relay/connect"),
+		ProfileGate:    config.DefaultGate(config.LoadProfileFromEnv(config.ProfileLocalLab)),
+		DB:             db,
+		AdminToken:     os.Getenv("ISCP_ADMIN_TOKEN"),
+		AllowedOrigins: splitCSV(os.Getenv("ISCP_ALLOWED_ORIGINS")),
 	}
 	srv, err := relay.New(cfg)
 	if err != nil {
@@ -63,6 +66,20 @@ func env(key, fallback string) string {
 		return v
 	}
 	return fallback
+}
+
+func splitCSV(value string) []string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		if item := strings.TrimSpace(part); item != "" {
+			out = append(out, item)
+		}
+	}
+	return out
 }
 
 func openDatabase(ctx context.Context, logger *slog.Logger) (*pgxpool.Pool, error) {

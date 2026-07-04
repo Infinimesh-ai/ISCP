@@ -1,12 +1,14 @@
 package relay
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/json"
-	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 
@@ -29,31 +31,34 @@ import (
 )
 
 type Config struct {
-	DomainID     string
-	RelayID      string
-	BaseURL      string
-	WebSocketURL string
-	ProfileGate  config.Gate
-	DB           *pgxpool.Pool
+	DomainID       string
+	RelayID        string
+	BaseURL        string
+	WebSocketURL   string
+	ProfileGate    config.Gate
+	DB             *pgxpool.Pool
+	AdminToken     string
+	AllowedOrigins []string
 }
 
 type Server struct {
-	cfg       Config
-	provider  crypto.Provider
-	signer    identity.Device
-	mux       *http.ServeMux
-	limiter   *ratelimit.Limiter
-	replay    *replay.Cache
-	queue     *queue.Queue
-	repo      *repository.RelayRepository
-	upgrader  websocket.Upgrader
-	mu        sync.RWMutex
-	devices   map[string]identity.DeviceIdentity
-	access    map[string]credential
-	refresh   map[string]credential
-	revoked   map[string]struct{}
-	tickets   map[string]ticketState
-	startedAt time.Time
+	cfg         Config
+	provider    crypto.Provider
+	signer      identity.Device
+	mux         *http.ServeMux
+	limiter     *ratelimit.Limiter
+	replay      *replay.Cache
+	queue       *queue.Queue
+	repo        *repository.RelayRepository
+	upgrader    websocket.Upgrader
+	mu          sync.RWMutex
+	devices     map[string]identity.DeviceIdentity
+	access      map[string]credential
+	refresh     map[string]credential
+	revoked     map[string]struct{}
+	tickets     map[string]ticketState
+	connections map[string]connectionState
+	startedAt   time.Time
 }
 
 type credential struct {
@@ -70,6 +75,16 @@ type ticketState struct {
 	Uses    int
 }
 
+type connectionState struct {
+	ConnectionID string    `json:"connection_id"`
+	DomainID     string    `json:"domain_id"`
+	DeviceID     string    `json:"device_id"`
+	State        string    `json:"state"`
+	ConnectedAt  time.Time `json:"connected_at"`
+	LastSeenAt   time.Time `json:"last_seen_at"`
+	ClosedAt     time.Time `json:"closed_at,omitempty"`
+}
+
 func New(cfg Config) (*Server, error) {
 	provider := crypto.NewProvider()
 	now := time.Now().UTC()
@@ -83,34 +98,47 @@ func New(cfg Config) (*Server, error) {
 	if err := config.ValidateGate(cfg.ProfileGate); err != nil {
 		return nil, err
 	}
+	if cfg.ProfileGate.Profile == config.ProfileProduction && strings.TrimSpace(cfg.AdminToken) == "" {
+		return nil, iscperrors.New(iscperrors.CodeConfigInvalid, "production relay requires ISCP_ADMIN_TOKEN")
+	}
+	if cfg.ProfileGate.Profile == config.ProfileProduction && len(cfg.AllowedOrigins) == 0 {
+		return nil, iscperrors.New(iscperrors.CodeConfigInvalid, "production relay requires allowed WebSocket origins")
+	}
 	var repo *repository.RelayRepository
 	if cfg.DB != nil {
 		r := repository.NewRelayRepository(cfg.DB)
 		repo = &r
 	}
 	s := &Server{
-		cfg:       cfg,
-		provider:  provider,
-		signer:    signer,
-		mux:       http.NewServeMux(),
-		limiter:   ratelimit.New(120, time.Minute),
-		replay:    replay.NewCache(),
-		queue:     queue.New(1 << 20),
-		repo:      repo,
-		upgrader:  websocket.Upgrader{CheckOrigin: func(*http.Request) bool { return true }},
-		devices:   map[string]identity.DeviceIdentity{},
-		access:    map[string]credential{},
-		refresh:   map[string]credential{},
-		revoked:   map[string]struct{}{},
-		tickets:   map[string]ticketState{},
-		startedAt: now,
+		cfg:         cfg,
+		provider:    provider,
+		signer:      signer,
+		mux:         http.NewServeMux(),
+		limiter:     ratelimit.New(120, time.Minute),
+		replay:      replay.NewCache(),
+		queue:       queue.New(1 << 20),
+		repo:        repo,
+		upgrader:    websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return originAllowed(r, cfg.AllowedOrigins, cfg.BaseURL, cfg.WebSocketURL) }},
+		devices:     map[string]identity.DeviceIdentity{},
+		access:      map[string]credential{},
+		refresh:     map[string]credential{},
+		revoked:     map[string]struct{}{},
+		tickets:     map[string]ticketState{},
+		connections: map[string]connectionState{},
+		startedAt:   now,
 	}
 	s.routes()
 	return s, nil
 }
 
 func (s *Server) Handler() http.Handler {
-	return s.mux
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.limiter.Allow(clientKey(r), time.Now().UTC()) {
+			httpx.WriteError(w, http.StatusTooManyRequests, iscperrors.Retryable(iscperrors.CodeAccessInvalid, "rate limit exceeded"))
+			return
+		}
+		s.mux.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) routes() {
@@ -185,23 +213,11 @@ func (s *Server) bindSelf(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := identity.VerifyProof(s.provider, req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, time.Now().UTC(), 5*time.Minute); err != nil {
+	if err := s.verifyProof(req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
-	if err := s.persistDevice(r.Context(), req.Identity, "active"); err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, err)
-		return
-	}
-	access, refresh, err := s.issueCredentials(r.Context(), req.Identity.DomainID, req.Identity.DeviceID)
-	if err != nil {
-		httpx.WriteError(w, http.StatusInternalServerError, err)
-		return
-	}
-	s.mu.Lock()
-	s.devices[req.Identity.DeviceID] = req.Identity
-	s.mu.Unlock()
-	httpx.WriteJSON(w, http.StatusOK, map[string]any{"access": access, "refresh": refresh})
+	s.bindIdentity(w, r, req.Identity)
 }
 
 type registerTicketRequest struct {
@@ -212,9 +228,17 @@ type registerTicketRequest struct {
 }
 
 func (s *Server) registerWithTicket(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var req registerTicketRequest
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.verifyProof(req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
+		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
 	s.mu.Lock()
@@ -230,10 +254,14 @@ func (s *Server) registerWithTicket(w http.ResponseWriter, r *http.Request) {
 	state.Uses++
 	s.tickets[req.TicketID] = state
 	s.mu.Unlock()
-	s.bindSelf(w, requestWithBody(r, req.Identity, req.Proof))
+	s.bindIdentity(w, r, req.Identity)
 }
 
 func (s *Server) refreshAccess(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var req struct {
 		Refresh string `json:"refresh"`
 	}
@@ -262,6 +290,10 @@ func (s *Server) refreshAccess(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusUnauthorized, iscperrors.New(iscperrors.CodeAccessInvalid, "refresh credential invalid"))
 		return
 	}
+	if err := s.revokeRefreshCredential(r.Context(), req.Refresh); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
 	access, refresh, err := s.issueCredentials(r.Context(), cred.DomainID, cred.DeviceID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err)
@@ -271,11 +303,25 @@ func (s *Server) refreshAccess(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) revokeAccess(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var req struct {
 		DeviceID string `json:"device_id"`
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	cred, err := s.authenticateAccess(r)
+	if err != nil {
+		if !s.adminAuthorized(r) {
+			httpx.WriteError(w, http.StatusUnauthorized, err)
+			return
+		}
+	} else if cred.DeviceID != req.DeviceID {
+		httpx.WriteError(w, http.StatusForbidden, iscperrors.New(iscperrors.CodeAccessInvalid, "access credential cannot revoke another device"))
 		return
 	}
 	s.mu.Lock()
@@ -312,6 +358,11 @@ func (s *Server) envelopes(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	cred, err := s.authenticateAccess(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusUnauthorized, err)
+		return
+	}
 	var raw json.RawMessage
 	if err := httpx.DecodeJSON(r, &raw); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err)
@@ -329,6 +380,14 @@ func (s *Server) envelopes(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := json.Unmarshal(raw, &meta); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	if err := s.validateEnvelopeMeta(meta.DomainID, meta.MessageID, meta.SenderDeviceID, meta.RecipientDeviceID, meta.Route.TTLSeconds, meta.Route.Priority); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	if cred.DomainID != meta.DomainID || cred.DeviceID != meta.SenderDeviceID {
+		httpx.WriteError(w, http.StatusForbidden, iscperrors.New(iscperrors.CodeAccessInvalid, "access credential does not match envelope sender"))
 		return
 	}
 	canon, err := canonical.Marshal(raw)
@@ -415,6 +474,10 @@ func (s *Server) envelopes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	c, err := s.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
@@ -448,25 +511,71 @@ func (s *Server) connect(w http.ResponseWriter, r *http.Request) {
 		_ = c.WriteJSON(map[string]string{"state": "closed", "error": "access revoked or unknown"})
 		return
 	}
-	if err := identity.VerifyProof(s.provider, id, proof, s.cfg.RelayID, challenge, time.Now().UTC(), time.Minute); err != nil {
+	if err := s.verifyProof(id, proof, s.cfg.RelayID, challenge, time.Minute); err != nil {
 		_ = c.WriteJSON(map[string]string{"state": "closed", "error": "proof failed"})
 		return
 	}
+	connectionID := "conn-" + randomToken()[:16]
+	now := time.Now().UTC()
+	s.recordConnection(connectionState{
+		ConnectionID: connectionID,
+		DomainID:     id.DomainID,
+		DeviceID:     id.DeviceID,
+		State:        "ready",
+		ConnectedAt:  now,
+		LastSeenAt:   now,
+	})
+	defer s.closeConnection(connectionID)
 	_ = c.WriteJSON(map[string]string{"state": "ready"})
+	messages := s.queue.DequeueFor(id.DomainID, id.DeviceID, time.Now().UTC(), 100)
+	delivered := 0
+	for _, msg := range messages {
+		if err := c.WriteJSON(map[string]any{"state": "message", "message_id": msg.MessageID, "envelope": json.RawMessage(msg.Envelope)}); err != nil {
+			return
+		}
+		delivered++
+		if s.repo != nil {
+			_ = s.repo.MarkMessageDelivered(r.Context(), repository.DomainID(msg.DomainID), msg.MessageID, time.Now().UTC())
+		}
+	}
+	_ = c.WriteJSON(map[string]any{"state": "drained", "delivered": delivered})
 }
 
-func (s *Server) adminDevices(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) adminDevices(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	httpx.WriteJSON(w, http.StatusOK, s.devices)
 }
 
-func (s *Server) adminConnections(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, []any{})
+func (s *Server) adminConnections(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	httpx.WriteJSON(w, http.StatusOK, s.connections)
 }
 
-func (s *Server) adminMessages(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "metadata-only"})
+func (s *Server) adminMessages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, s.queue.SnapshotMetadata(time.Now().UTC()))
 }
 
 func (s *Server) issueCredentials(ctx context.Context, domainID, deviceID string) (credential, credential, error) {
@@ -498,17 +607,208 @@ func (s *Server) issueCredentials(ctx context.Context, domainID, deviceID string
 	return access, refresh, nil
 }
 
+func (s *Server) bindIdentity(w http.ResponseWriter, r *http.Request, id identity.DeviceIdentity) {
+	if err := s.persistDevice(r.Context(), id, "active"); err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	access, refresh, err := s.issueCredentials(r.Context(), id.DomainID, id.DeviceID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	s.mu.Lock()
+	s.devices[id.DeviceID] = id
+	s.mu.Unlock()
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"access": access, "refresh": refresh})
+}
+
+func (s *Server) verifyProof(id identity.DeviceIdentity, proof identity.DeviceProof, audience, challenge string, ttl time.Duration) error {
+	if strings.TrimSpace(proof.Nonce) == "" {
+		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce is required")
+	}
+	now := time.Now().UTC()
+	if err := identity.VerifyProof(s.provider, id, proof, audience, challenge, now, ttl); err != nil {
+		return err
+	}
+	key := strings.Join([]string{proof.DomainID, proof.DeviceID, proof.Audience, proof.Nonce}, "\x00")
+	if !s.replay.Use(key, proof.IssuedAt.Add(ttl), now) {
+		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce replay detected")
+	}
+	return nil
+}
+
+func (s *Server) authenticateAccess(r *http.Request) (credential, error) {
+	token := bearerToken(r)
+	if token == "" {
+		return credential{}, iscperrors.New(iscperrors.CodeAccessInvalid, "access credential is required")
+	}
+	hash := crypto.SHA256([]byte(token))
+	hashKey := string(hash)
+	now := time.Now().UTC()
+	s.mu.Lock()
+	cred, ok := s.access[hashKey]
+	if ok && !cred.Revoked && now.After(cred.ExpiresAt) {
+		cred.Revoked = true
+		s.access[hashKey] = cred
+	}
+	s.mu.Unlock()
+	if ok && !cred.Revoked && now.Before(cred.ExpiresAt) {
+		return cred, nil
+	}
+	if s.repo != nil {
+		dbCred, err := s.repo.GetAccessByHash(r.Context(), repository.DomainID(s.cfg.DomainID), hash, now)
+		if err == nil {
+			return credential{DomainID: string(dbCred.DomainID), DeviceID: dbCred.DeviceID, Hash: dbCred.Hash, ExpiresAt: dbCred.ExpiresAt}, nil
+		}
+		if err != pgx.ErrNoRows {
+			return credential{}, err
+		}
+	}
+	return credential{}, iscperrors.New(iscperrors.CodeAccessInvalid, "access credential invalid")
+}
+
+func (s *Server) revokeRefreshCredential(ctx context.Context, token string) error {
+	hash := crypto.SHA256([]byte(token))
+	hashKey := string(hash)
+	s.mu.Lock()
+	if cred, ok := s.refresh[hashKey]; ok {
+		cred.Revoked = true
+		s.refresh[hashKey] = cred
+	}
+	s.mu.Unlock()
+	if s.repo != nil {
+		return s.repo.RevokeRefreshByHash(ctx, repository.DomainID(s.cfg.DomainID), hash, time.Now().UTC())
+	}
+	return nil
+}
+
+func (s *Server) validateEnvelopeMeta(domainID, messageID, senderDeviceID, recipientDeviceID string, ttlSeconds, priority int) error {
+	if domainID != s.cfg.DomainID {
+		return iscperrors.New(iscperrors.CodeEnvelopeInvalid, "envelope domain does not match relay domain")
+	}
+	if strings.TrimSpace(messageID) == "" || strings.TrimSpace(senderDeviceID) == "" || strings.TrimSpace(recipientDeviceID) == "" {
+		return iscperrors.New(iscperrors.CodeEnvelopeInvalid, "envelope routing identifiers are required")
+	}
+	if ttlSeconds <= 0 || ttlSeconds > int((24*time.Hour)/time.Second) {
+		return iscperrors.New(iscperrors.CodeEnvelopeInvalid, "envelope ttl must be between 1 second and 24 hours")
+	}
+	if priority < 0 || priority > 9 {
+		return iscperrors.New(iscperrors.CodeEnvelopeInvalid, "envelope priority must be between 0 and 9")
+	}
+	return nil
+}
+
+func (s *Server) recordConnection(state connectionState) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.connections[state.ConnectionID] = state
+}
+
+func (s *Server) closeConnection(connectionID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.connections[connectionID]
+	state.State = "closed"
+	state.ClosedAt = time.Now().UTC()
+	state.LastSeenAt = state.ClosedAt
+	s.connections[connectionID] = state
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if s.adminAuthorized(r) {
+		return true
+	}
+	httpx.WriteError(w, http.StatusUnauthorized, iscperrors.New(iscperrors.CodeAccessInvalid, "admin credential is required"))
+	return false
+}
+
+func (s *Server) adminAuthorized(r *http.Request) bool {
+	expected := strings.TrimSpace(s.cfg.AdminToken)
+	if expected == "" {
+		return true
+	}
+	token := bearerToken(r)
+	if token == "" {
+		token = strings.TrimSpace(r.Header.Get("X-ISCP-Admin-Token"))
+	}
+	if token == "" || len(token) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
+func bearerToken(r *http.Request) string {
+	value := strings.TrimSpace(r.Header.Get("Authorization"))
+	if value == "" {
+		return ""
+	}
+	prefix := "Bearer "
+	if len(value) < len(prefix) || !strings.EqualFold(value[:len(prefix)], prefix) {
+		return ""
+	}
+	return strings.TrimSpace(value[len(prefix):])
+}
+
+func clientKey(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		if idx := strings.IndexByte(forwarded, ','); idx >= 0 {
+			return strings.TrimSpace(forwarded[:idx])
+		}
+		return forwarded
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+	return "unknown"
+}
+
+func originAllowed(r *http.Request, allowed []string, fallbackURLs ...string) bool {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" {
+		return true
+	}
+	allowedSet := map[string]struct{}{}
+	for _, item := range allowed {
+		if normalized := normalizedOrigin(item); normalized != "" {
+			allowedSet[normalized] = struct{}{}
+		}
+	}
+	for _, item := range fallbackURLs {
+		if normalized := normalizedOrigin(item); normalized != "" {
+			allowedSet[normalized] = struct{}{}
+		}
+	}
+	_, ok := allowedSet[normalizedOrigin(origin)]
+	return ok
+}
+
+func normalizedOrigin(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	scheme := u.Scheme
+	if scheme == "ws" {
+		scheme = "http"
+	} else if scheme == "wss" {
+		scheme = "https"
+	}
+	return scheme + "://" + strings.ToLower(u.Host)
+}
+
 func randomToken() string {
 	var b [32]byte
 	_, _ = rand.Read(b[:])
 	return crypto.Base64URL(b[:])
-}
-
-func requestWithBody(r *http.Request, id identity.DeviceIdentity, proof identity.DeviceProof) *http.Request {
-	body, _ := json.Marshal(bindSelfRequest{Identity: id, Proof: proof})
-	cp := r.Clone(r.Context())
-	cp.Body = io.NopCloser(bytes.NewReader(body))
-	return cp
 }
 
 func (s *Server) persistDevice(ctx context.Context, id identity.DeviceIdentity, status string) error {

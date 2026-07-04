@@ -232,7 +232,7 @@ func runEnvelope(args []string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("usage: iscp envelope encrypt|decrypt|send")
 	}
-	p, _, _, sa, sb, err := readySession()
+	p, a, _, sa, sb, err := readySession()
 	if err != nil {
 		return err
 	}
@@ -264,8 +264,12 @@ func runEnvelope(args []string) error {
 		})
 	case "send":
 		endpoint := endpointFromEnv("ISCP_RELAY_ENDPOINT", "http://127.0.0.1:8080")
+		access, _, err := relayBindDevice(endpoint, a)
+		if err != nil {
+			return err
+		}
 		var receipt map[string]any
-		if err := postJSON(context.Background(), endpoint+"/v2/relay/envelopes", env, &receipt, http.StatusAccepted); err != nil {
+		if err := postJSONWithBearer(context.Background(), endpoint+"/v2/relay/envelopes", access.Token, env, &receipt, http.StatusAccepted); err != nil {
 			return err
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "sent", "message_id": env.MessageID, "relay_status": receipt["status"]})
@@ -347,11 +351,11 @@ func runRelay(args []string) error {
 		}
 		return json.NewEncoder(os.Stdout).Encode(map[string]any{"status": "refreshed", "access_expires_at": refreshedAccess.ExpiresAt, "refresh_expires_at": refreshedRefresh.ExpiresAt, "credentials_redacted": true})
 	case "revoke-access":
-		_, refresh, err := relayBind(endpoint)
+		access, refresh, err := relayBind(endpoint)
 		if err != nil {
 			return err
 		}
-		if err := relayRevoke(endpoint, refresh.DeviceID); err != nil {
+		if err := relayRevoke(endpoint, access.Token, refresh.DeviceID); err != nil {
 			return err
 		}
 		if _, _, err := relayRefresh(endpoint, refresh.Token); err == nil {
@@ -447,6 +451,7 @@ func runConformance(args []string) error {
 			TrustEndpoint: trustEndpoint,
 			CLIRunner:     runLocalE2EForConformance,
 			CLIWorkflows:  runLocalCLIWorkflowsForConformance,
+			AdminToken:    os.Getenv("ISCP_ADMIN_TOKEN"),
 		})
 	case "report":
 		return writeConformanceReport(output, conformance.Options{
@@ -455,6 +460,7 @@ func runConformance(args []string) error {
 			TrustEndpoint: trustEndpoint,
 			CLIRunner:     runLocalE2EForConformance,
 			CLIWorkflows:  runLocalCLIWorkflowsForConformance,
+			AdminToken:    os.Getenv("ISCP_ADMIN_TOKEN"),
 		})
 	case "validate-report":
 		return validateConformanceReport(output, false)
@@ -643,6 +649,12 @@ func relayBind(endpoint string) (cliCredential, cliCredential, error) {
 	if err != nil {
 		return cliCredential{}, cliCredential{}, err
 	}
+	return relayBindDevice(endpoint, dev)
+}
+
+func relayBindDevice(endpoint string, dev identity.Device) (cliCredential, cliCredential, error) {
+	p := crypto.NewProvider()
+	now := time.Now().UTC()
 	proof, err := dev.CreateProof(p, "relay-local", "challenge-"+randomShort(), "nonce-"+randomShort(), now)
 	if err != nil {
 		return cliCredential{}, cliCredential{}, err
@@ -673,8 +685,8 @@ func relayRefresh(endpoint, refresh string) (cliCredential, cliCredential, error
 	return out.Access, out.Refresh, nil
 }
 
-func relayRevoke(endpoint, deviceID string) error {
-	return postJSON(context.Background(), endpoint+"/v2/relay/devices/revoke-access", map[string]string{"device_id": deviceID}, nil, http.StatusOK)
+func relayRevoke(endpoint, accessToken, deviceID string) error {
+	return postJSONWithBearer(context.Background(), endpoint+"/v2/relay/devices/revoke-access", accessToken, map[string]string{"device_id": deviceID}, nil, http.StatusOK)
 }
 
 func trustSubmitAuthorize(endpoint string) (trustcore.Grant, identity.Device, error) {
@@ -694,7 +706,7 @@ func trustSubmitAuthorize(endpoint string) (trustcore.Grant, identity.Device, er
 	var auth struct {
 		Grant trustcore.Grant `json:"grant"`
 	}
-	if err := postJSON(context.Background(), endpoint+"/v2/trust/devices/authorize", map[string]any{
+	if err := postJSONWithAdmin(context.Background(), endpoint+"/v2/trust/devices/authorize", map[string]any{
 		"device_id":   dev.Identity.DeviceID,
 		"audience":    "peer-local",
 		"permissions": []string{"text"},
@@ -718,7 +730,7 @@ func trustVerify(endpoint string, grant trustcore.Grant, deviceID, audience, thu
 }
 
 func trustRevoke(endpoint, deviceID string) error {
-	return postJSON(context.Background(), endpoint+"/v2/trust/devices/revoke", map[string]string{"device_id": deviceID, "reason": "cli"}, nil, http.StatusOK)
+	return postJSONWithAdmin(context.Background(), endpoint+"/v2/trust/devices/revoke", map[string]string{"device_id": deviceID, "reason": "cli"}, nil, http.StatusOK)
 }
 
 func getJSON(ctx context.Context, url string, out any) error {
@@ -742,6 +754,22 @@ func getJSON(ctx context.Context, url string, out any) error {
 }
 
 func postJSON(ctx context.Context, url string, in any, out any, want int) error {
+	return postJSONWithBearer(ctx, url, "", in, out, want)
+}
+
+func postJSONWithAdmin(ctx context.Context, url string, in any, out any, want int) error {
+	return postJSONWithHeaders(ctx, url, in, out, want, map[string]string{"X-ISCP-Admin-Token": os.Getenv("ISCP_ADMIN_TOKEN")})
+}
+
+func postJSONWithBearer(ctx context.Context, url string, bearer string, in any, out any, want int) error {
+	headers := map[string]string{}
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+	}
+	return postJSONWithHeaders(ctx, url, in, out, want, headers)
+}
+
+func postJSONWithHeaders(ctx context.Context, url string, in any, out any, want int, headers map[string]string) error {
 	body, err := json.Marshal(in)
 	if err != nil {
 		return err
@@ -751,6 +779,11 @@ func postJSON(ctx context.Context, url string, in any, out any, want int) error 
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		if strings.TrimSpace(value) != "" {
+			req.Header.Set(key, value)
+		}
+	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err

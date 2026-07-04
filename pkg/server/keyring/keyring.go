@@ -49,6 +49,26 @@ func (r *Ring) Active() (Key, error) {
 	return Key{}, iscperrors.New(iscperrors.CodeKeyInvalid, "active signing key not found")
 }
 
+func (r *Ring) Get(id string) (Key, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	key, ok := r.keys[id]
+	if !ok || key.State == StateRevoked {
+		return Key{}, iscperrors.New(iscperrors.CodeKeyInvalid, "signing key not found")
+	}
+	return key, nil
+}
+
+func (r *Ring) Keys() []Key {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	out := make([]Key, 0, len(r.keys))
+	for _, key := range r.keys {
+		out = append(out, key)
+	}
+	return out
+}
+
 func (r *Ring) Rotate(nextID string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

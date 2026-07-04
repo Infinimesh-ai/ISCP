@@ -12,6 +12,12 @@ generated conformance report reaches a Go decision.
   No-Go with an explicit residual risk.
 - Production profile rejects unsigned descriptors, bearer-only access, and
   plaintext debug behavior.
+- Production profile requires an operator admin token and explicit WebSocket
+  allowed origins.
+- Relay envelope submission requires a valid sender access credential, and
+  device proof nonces are replay-protected.
+- Trust Root authorization, revocation, key rotation, and audit APIs require an
+  admin credential.
 - Relay cannot decrypt business payloads.
 - Trust revocation blocks new sensitive sessions.
 - PostgreSQL 18 starts from an empty database and applies the migrations.

@@ -43,6 +43,10 @@ separate boundaries:
   side only.
 - Trust Grants must be signed by the Trust Root and validated against audience,
   confirmation, permissions, relay constraints, expiry, and revocation state.
+- Relay envelope submission requires a valid access credential bound to the
+  envelope sender device.
+- Trust Root operator actions and Relay admin APIs require an admin credential in
+  production profile.
 - Relay services handle opaque envelopes and do not hold end-to-end session
   keys.
 - `session.ready` key confirmation is required before business payload

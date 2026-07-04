@@ -2,9 +2,12 @@ package trust
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -22,6 +25,8 @@ import (
 	"github.com/Infinimesh-ai/ISCP/pkg/server/keyring"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/policy"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/postgres"
+	"github.com/Infinimesh-ai/ISCP/pkg/server/ratelimit"
+	"github.com/Infinimesh-ai/ISCP/pkg/server/replay"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/repository"
 )
 
@@ -31,6 +36,7 @@ type Config struct {
 	BaseURL     string
 	ProfileGate config.Gate
 	DB          *pgxpool.Pool
+	AdminToken  string
 }
 
 type Server struct {
@@ -38,6 +44,8 @@ type Server struct {
 	provider crypto.Provider
 	signer   identity.Device
 	mux      *http.ServeMux
+	limiter  *ratelimit.Limiter
+	replay   *replay.Cache
 	policy   policy.Engine
 	keys     *keyring.Ring
 	repo     *repository.TrustRepository
@@ -73,6 +81,9 @@ func New(cfg Config) (*Server, error) {
 	if err := config.ValidateGate(cfg.ProfileGate); err != nil {
 		return nil, err
 	}
+	if cfg.ProfileGate.Profile == config.ProfileProduction && strings.TrimSpace(cfg.AdminToken) == "" {
+		return nil, iscperrors.New(iscperrors.CodeConfigInvalid, "production trust root requires ISCP_ADMIN_TOKEN")
+	}
 	ring := keyring.NewRing()
 	ring.Add(keyring.Key{ID: signer.Identity.PublicKey.KID, State: keyring.StateActive, Private: signer.Private, Public: signer.Private.Public()})
 	var repo *repository.TrustRepository
@@ -85,6 +96,8 @@ func New(cfg Config) (*Server, error) {
 		provider: provider,
 		signer:   signer,
 		mux:      http.NewServeMux(),
+		limiter:  ratelimit.New(120, time.Minute),
+		replay:   replay.NewCache(),
 		policy:   policy.NewDefault(),
 		keys:     ring,
 		repo:     repo,
@@ -95,7 +108,15 @@ func New(cfg Config) (*Server, error) {
 	return s, nil
 }
 
-func (s *Server) Handler() http.Handler { return s.mux }
+func (s *Server) Handler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.limiter.Allow(clientKey(r), time.Now().UTC()) {
+			httpx.WriteError(w, http.StatusTooManyRequests, iscperrors.Retryable(iscperrors.CodeAccessInvalid, "rate limit exceeded"))
+			return
+		}
+		s.mux.ServeHTTP(w, r)
+	})
+}
 
 func (s *Server) routes() {
 	s.mux.HandleFunc("/healthz", s.health)
@@ -130,20 +151,24 @@ func (s *Server) version(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) wellKnown(w http.ResponseWriter, _ *http.Request) {
 	now := time.Now().UTC()
+	keys := make([]descriptor.PublicKey, 0, len(s.keys.Keys()))
+	for _, key := range s.keys.Keys() {
+		keys = append(keys, descriptor.PublicKey{
+			KTY:    "Ed25519",
+			Use:    "grant-signature",
+			KID:    key.ID,
+			Public: crypto.Base64URL(key.Public.Bytes()),
+			State:  string(key.State),
+		})
+	}
 	desc := descriptor.TrustRootDescriptor{
 		Type:        "iscp.trust_root.descriptor.v2",
 		TrustRootID: s.cfg.TrustRootID,
 		DomainID:    s.cfg.DomainID,
 		BaseURL:     s.cfg.BaseURL,
-		Keys: []descriptor.PublicKey{{
-			KTY:    "Ed25519",
-			Use:    "grant-signature",
-			KID:    s.signer.Identity.PublicKey.KID,
-			Public: s.signer.Identity.PublicKey.Public,
-			State:  "active",
-		}},
-		IssuedAt:  now,
-		ExpiresAt: now.Add(24 * time.Hour),
+		Keys:        keys,
+		IssuedAt:    now,
+		ExpiresAt:   now.Add(24 * time.Hour),
 	}
 	signed, err := descriptor.Sign(s.provider, s.signer, desc.Type, desc, now)
 	if err != nil {
@@ -160,12 +185,16 @@ type submitRequest struct {
 }
 
 func (s *Server) submitDevice(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var req submitRequest
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
-	if err := identity.VerifyProof(s.provider, req.Identity, req.Proof, s.cfg.TrustRootID, req.Proof.Challenge, time.Now().UTC(), 5*time.Minute); err != nil {
+	if err := s.verifyProof(req.Identity, req.Proof, s.cfg.TrustRootID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
@@ -195,6 +224,13 @@ type authorizeRequest struct {
 }
 
 func (s *Server) authorizeDevice(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	var req authorizeRequest
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err)
@@ -246,7 +282,12 @@ func (s *Server) authorizeDevice(w http.ResponseWriter, r *http.Request) {
 	}
 	tp, _ := identity.Thumbprint(rec.Identity)
 	now := time.Now().UTC()
-	grant, err := trustcore.SignGrant(s.provider, s.signer, trustcore.Grant{
+	signer, err := s.activeSigner()
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	grant, err := trustcore.SignGrant(s.provider, signer, trustcore.Grant{
 		GrantID:                "grant-" + crypto.Base64URL(crypto.SHA256([]byte(req.DeviceID + now.String())))[:16],
 		SubjectDeviceID:        req.DeviceID,
 		Audience:               req.Audience,
@@ -273,6 +314,10 @@ func (s *Server) authorizeDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) verifyGrant(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	var req struct {
 		Grant                  trustcore.Grant `json:"grant"`
 		Audience               string          `json:"audience"`
@@ -297,7 +342,12 @@ func (s *Server) verifyGrant(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	err := trustcore.VerifyGrant(s.provider, req.Grant, s.signer.Identity, trustcore.VerifyOptions{
+	issuer, err := s.issuerForGrant(req.Grant)
+	if err != nil {
+		httpx.WriteError(w, http.StatusForbidden, err)
+		return
+	}
+	err = trustcore.VerifyGrant(s.provider, req.Grant, issuer, trustcore.VerifyOptions{
 		Audience:               req.Audience,
 		SubjectDeviceID:        req.SubjectDeviceID,
 		ConfirmationThumbprint: req.ConfirmationThumbprint,
@@ -314,6 +364,10 @@ func (s *Server) verifyGrant(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deviceStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	deviceID := r.URL.Query().Get("device_id")
 	s.mu.RLock()
 	rec, ok := s.devices[deviceID]
@@ -335,6 +389,10 @@ func (s *Server) deviceStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) grantStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	grantID := r.URL.Query().Get("grant_id")
 	s.mu.RLock()
 	grant, ok := s.grants[grantID]
@@ -360,6 +418,13 @@ func (s *Server) grantStatus(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	var req struct {
 		DeviceID string `json:"device_id"`
 		Reason   string `json:"reason"`
@@ -400,7 +465,11 @@ func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, rec)
 }
 
-func (s *Server) revocations(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) revocations(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	out := map[string]uint64{}
@@ -412,7 +481,14 @@ func (s *Server) revocations(w http.ResponseWriter, _ *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, out)
 }
 
-func (s *Server) rotateKeys(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) rotateKeys(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	priv, pub, err := s.provider.GenerateIdentityKey()
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err)
@@ -424,10 +500,32 @@ func (s *Server) rotateKeys(w http.ResponseWriter, _ *http.Request) {
 		httpx.WriteError(w, http.StatusInternalServerError, err)
 		return
 	}
+	s.signer = identity.Device{
+		Private: priv,
+		Identity: identity.DeviceIdentity{
+			Type:     identity.TypeDeviceIdentity,
+			DomainID: s.cfg.DomainID,
+			DeviceID: s.cfg.TrustRootID + "-signer",
+			PublicKey: identity.PublicKey{
+				KTY:    "Ed25519",
+				Use:    "identity-signature",
+				KID:    kid,
+				Public: crypto.Base64URL(pub.Bytes()),
+			},
+			CreatedAt: time.Now().UTC(),
+		},
+	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"active_key_id": kid})
 }
 
-func (s *Server) adminAudit(w http.ResponseWriter, _ *http.Request) {
+func (s *Server) adminAudit(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	httpx.WriteJSON(w, http.StatusOK, s.audit)
@@ -435,6 +533,117 @@ func (s *Server) adminAudit(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) MarshalJSON() ([]byte, error) {
 	return json.Marshal(map[string]string{"trust_root_id": s.cfg.TrustRootID})
+}
+
+func (s *Server) verifyProof(id identity.DeviceIdentity, proof identity.DeviceProof, audience, challenge string, ttl time.Duration) error {
+	if strings.TrimSpace(proof.Nonce) == "" {
+		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce is required")
+	}
+	now := time.Now().UTC()
+	if err := identity.VerifyProof(s.provider, id, proof, audience, challenge, now, ttl); err != nil {
+		return err
+	}
+	key := strings.Join([]string{proof.DomainID, proof.DeviceID, proof.Audience, proof.Nonce}, "\x00")
+	if !s.replay.Use(key, proof.IssuedAt.Add(ttl), now) {
+		return iscperrors.New(iscperrors.CodeReplayDetected, "proof nonce replay detected")
+	}
+	return nil
+}
+
+func (s *Server) activeSigner() (identity.Device, error) {
+	key, err := s.keys.Active()
+	if err != nil {
+		return identity.Device{}, err
+	}
+	return identity.Device{
+		Private: key.Private,
+		Identity: identity.DeviceIdentity{
+			Type:     identity.TypeDeviceIdentity,
+			DomainID: s.cfg.DomainID,
+			DeviceID: s.cfg.TrustRootID + "-signer",
+			PublicKey: identity.PublicKey{
+				KTY:    "Ed25519",
+				Use:    "identity-signature",
+				KID:    key.ID,
+				Public: crypto.Base64URL(key.Public.Bytes()),
+			},
+			CreatedAt: time.Now().UTC(),
+		},
+	}, nil
+}
+
+func (s *Server) issuerForGrant(grant trustcore.Grant) (identity.DeviceIdentity, error) {
+	if strings.TrimSpace(grant.Signature.KID) == "" {
+		return identity.DeviceIdentity{}, iscperrors.New(iscperrors.CodeTrustInvalid, "trust grant signature kid is required")
+	}
+	key, err := s.keys.Get(grant.Signature.KID)
+	if err != nil {
+		return identity.DeviceIdentity{}, err
+	}
+	return identity.DeviceIdentity{
+		Type:     identity.TypeDeviceIdentity,
+		DomainID: s.cfg.DomainID,
+		DeviceID: s.cfg.TrustRootID + "-signer",
+		PublicKey: identity.PublicKey{
+			KTY:    "Ed25519",
+			Use:    "identity-signature",
+			KID:    key.ID,
+			Public: crypto.Base64URL(key.Public.Bytes()),
+		},
+		CreatedAt: time.Now().UTC(),
+	}, nil
+}
+
+func (s *Server) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
+	if s.adminAuthorized(r) {
+		return true
+	}
+	httpx.WriteError(w, http.StatusUnauthorized, iscperrors.New(iscperrors.CodeAccessInvalid, "admin credential is required"))
+	return false
+}
+
+func (s *Server) adminAuthorized(r *http.Request) bool {
+	expected := strings.TrimSpace(s.cfg.AdminToken)
+	if expected == "" {
+		return true
+	}
+	token := bearerToken(r)
+	if token == "" {
+		token = strings.TrimSpace(r.Header.Get("X-ISCP-Admin-Token"))
+	}
+	if token == "" || len(token) != len(expected) {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(expected)) == 1
+}
+
+func bearerToken(r *http.Request) string {
+	value := strings.TrimSpace(r.Header.Get("Authorization"))
+	if value == "" {
+		return ""
+	}
+	prefix := "Bearer "
+	if len(value) < len(prefix) || !strings.EqualFold(value[:len(prefix)], prefix) {
+		return ""
+	}
+	return strings.TrimSpace(value[len(prefix):])
+}
+
+func clientKey(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		if idx := strings.IndexByte(forwarded, ','); idx >= 0 {
+			return strings.TrimSpace(forwarded[:idx])
+		}
+		return forwarded
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+	return "unknown"
 }
 
 func (s *Server) persistSubmittedDevice(ctx context.Context, id identity.DeviceIdentity) error {

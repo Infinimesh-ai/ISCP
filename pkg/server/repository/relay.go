@@ -165,6 +165,39 @@ WHERE domain_id=$1 AND refresh_hash=$2 AND revoked_at IS NULL AND expires_at > $
 	return out, nil
 }
 
+func (r RelayRepository) GetAccessByHash(ctx context.Context, domainID DomainID, accessHash []byte, now time.Time) (RelayCredential, error) {
+	if err := RequireDomain(domainID); err != nil {
+		return RelayCredential{}, err
+	}
+	row := r.db.QueryRow(ctx, `
+SELECT id, domain_id, device_id, token_hash, issued_at, expires_at
+FROM iscp_relay.access_tokens
+WHERE domain_id=$1 AND token_hash=$2 AND revoked_at IS NULL AND expires_at > $3`,
+		string(domainID), accessHash, now)
+	var out RelayCredential
+	var domain string
+	if err := row.Scan(&out.ID, &domain, &out.DeviceID, &out.Hash, &out.IssuedAt, &out.ExpiresAt); err != nil {
+		if err == pgx.ErrNoRows {
+			return RelayCredential{}, err
+		}
+		return RelayCredential{}, err
+	}
+	out.DomainID = DomainID(domain)
+	return out, nil
+}
+
+func (r RelayRepository) RevokeRefreshByHash(ctx context.Context, domainID DomainID, refreshHash []byte, now time.Time) error {
+	if err := RequireDomain(domainID); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(ctx, `
+UPDATE iscp_relay.refresh_tokens
+SET revoked_at=$3
+WHERE domain_id=$1 AND refresh_hash=$2 AND revoked_at IS NULL`,
+		string(domainID), refreshHash, now)
+	return err
+}
+
 func (r RelayRepository) RevokeDeviceCredentials(ctx context.Context, domainID DomainID, deviceID string, now time.Time) error {
 	if err := RequireDomain(domainID); err != nil {
 		return err
@@ -237,5 +270,17 @@ receipt_canonical = EXCLUDED.receipt_canonical`,
 		receipt.ReceiptCanonical,
 		receipt.IssuedAt,
 	)
+	return err
+}
+
+func (r RelayRepository) MarkMessageDelivered(ctx context.Context, domainID DomainID, messageID string, now time.Time) error {
+	if err := RequireDomain(domainID); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(ctx, `
+UPDATE iscp_relay.messages
+SET delivered_at=$3
+WHERE domain_id=$1 AND message_id=$2`,
+		string(domainID), messageID, now)
 	return err
 }

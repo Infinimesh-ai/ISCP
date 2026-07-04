@@ -35,8 +35,13 @@ paths:
   /v2/relay/devices/revoke-access:
     post:
       summary: Revoke relay access for a device
+      security:
+        - RelayAccess: []
+        - AdminToken: []
       responses:
         "200": { description: Revoked }
+        "401": { description: Missing access or admin credential }
+        "403": { description: Access credential cannot revoke another device }
   /v2/relay/connect:
     get:
       summary: Relay WebSocket connect challenge and READY state machine
@@ -45,23 +50,36 @@ paths:
   /v2/relay/envelopes:
     post:
       summary: Submit an opaque SecureEnvelope
+      security:
+        - RelayAccess: []
       responses:
         "202": { description: Relay receipt }
+        "401": { description: Missing or invalid relay access credential }
+        "403": { description: Access credential does not match envelope sender }
   /v2/relay/admin/devices:
     get:
       summary: List relay device metadata
+      security:
+        - AdminToken: []
       responses:
         "200": { description: Devices }
+        "401": { description: Missing admin credential }
   /v2/relay/admin/connections:
     get:
       summary: List relay connection metadata
+      security:
+        - AdminToken: []
       responses:
         "200": { description: Connections }
+        "401": { description: Missing admin credential }
   /v2/relay/admin/messages:
     get:
       summary: List relay message metadata without payload plaintext
+      security:
+        - AdminToken: []
       responses:
         "200": { description: Message metadata }
+        "401": { description: Missing admin credential }
   /.well-known/iscp/trust-root:
     get:
       summary: Fetch signed Trust Root descriptor
@@ -75,13 +93,19 @@ paths:
   /v2/trust/devices/authorize:
     post:
       summary: Authorize a device and issue a Trust Grant
+      security:
+        - AdminToken: []
       responses:
         "200": { description: Trust Grant }
+        "401": { description: Missing admin credential }
   /v2/trust/devices/revoke:
     post:
       summary: Revoke a device and increase revocation epoch
+      security:
+        - AdminToken: []
       responses:
         "200": { description: Device revoked }
+        "401": { description: Missing admin credential }
   /v2/trust/devices/status:
     get:
       summary: Fetch device authorization status
@@ -116,14 +140,30 @@ paths:
   /v2/trust/keys/rotate:
     post:
       summary: Rotate Trust Root signing key next to active
+      security:
+        - AdminToken: []
       responses:
         "200": { description: Active key }
+        "401": { description: Missing admin credential }
   /v2/trust/admin/audit:
     get:
       summary: List Trust Root audit metadata
+      security:
+        - AdminToken: []
       responses:
         "200": { description: Audit entries }
+        "401": { description: Missing admin credential }
 components:
+  securitySchemes:
+    RelayAccess:
+      type: http
+      scheme: bearer
+      description: Relay access credential issued by bind-self or refresh-access.
+    AdminToken:
+      type: apiKey
+      in: header
+      name: X-ISCP-Admin-Token
+      description: Operator credential required by production profile for admin and authorization operations.
   schemas:
     Error:
       type: object

@@ -1,3 +1,14 @@
+{{- $relayBaseURL := default (printf "http://iscp-relay:%v" .Values.relay.port) .Values.relay.baseURL -}}
+{{- $relayWSURL := default (printf "ws://iscp-relay:%v/v2/relay/connect" .Values.relay.port) .Values.relay.webSocketURL -}}
+{{- if and (eq .Values.profile "production") (not .Values.admin.existingSecret) -}}
+{{- fail "production profile requires admin.existingSecret" -}}
+{{- end -}}
+{{- if and (eq .Values.profile "production") (not .Values.relay.allowedOrigins) -}}
+{{- fail "production profile requires relay.allowedOrigins" -}}
+{{- end -}}
+{{- if and (eq .Values.profile "production") (not .Values.postgres.externalURL) (not .Values.postgres.existingSecret) -}}
+{{- fail "production profile requires postgres.externalURL or postgres.existingSecret" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,18 +29,47 @@ spec:
         - name: relay
           image: {{ .Values.relay.image }}
           ports:
-            - containerPort: {{ .Values.relay.port }}
+            - name: http
+              containerPort: {{ .Values.relay.port }}
           env:
             - name: ISCP_PROFILE
               value: {{ .Values.profile | quote }}
             - name: ISCP_DOMAIN_ID
               value: {{ .Values.domainID | quote }}
+            - name: ISCP_RELAY_ID
+              value: {{ .Values.relay.id | quote }}
+            - name: ISCP_RELAY_ADDR
+              value: {{ printf ":%v" .Values.relay.port | quote }}
+            - name: ISCP_RELAY_BASE_URL
+              value: {{ $relayBaseURL | quote }}
+            - name: ISCP_RELAY_WS_URL
+              value: {{ $relayWSURL | quote }}
+            {{- if .Values.relay.allowedOrigins }}
+            - name: ISCP_ALLOWED_ORIGINS
+              value: {{ join "," .Values.relay.allowedOrigins | quote }}
+            {{- end }}
+            {{- if .Values.admin.existingSecret }}
+            - name: ISCP_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.existingSecret | quote }}
+                  key: {{ .Values.admin.tokenKey | quote }}
+            {{- end }}
+            {{- if .Values.postgres.externalURL }}
+            - name: ISCP_DATABASE_URL
+              value: {{ .Values.postgres.externalURL | quote }}
+            {{- else if .Values.postgres.existingSecret }}
+            - name: ISCP_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.existingSecret | quote }}
+                  key: {{ .Values.postgres.urlKey | quote }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /readyz
-              port: {{ .Values.relay.port }}
+              port: http
           livenessProbe:
             httpGet:
               path: /livez
-              port: {{ .Values.relay.port }}
-
+              port: http

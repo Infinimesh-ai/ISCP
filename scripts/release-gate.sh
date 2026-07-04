@@ -83,6 +83,13 @@ docker_compose() {
     docker compose -f "${compose_file}" "$@"
 }
 
+ensure_compose_mount_permissions() {
+    chmod a+rx "${ISCP_REPO_ROOT}/deploy" \
+        "${ISCP_REPO_ROOT}/deploy/migrations" \
+        "${ISCP_REPO_ROOT}/deploy/migrations/postgres"
+    chmod a+r "${ISCP_REPO_ROOT}"/deploy/migrations/postgres/*.sql
+}
+
 http_ready() {
     local uri="$1"
     if command -v curl >/dev/null 2>&1; then
@@ -141,6 +148,7 @@ start_compose_services() {
     export ISCP_TRUST_PORT="${trust_port}"
     export ISCP_POSTGRES_PORT="${postgres_port}"
 
+    ensure_compose_mount_permissions
     docker_compose up --build --detach postgres relay trust-root || return
 
     local relay_probe_endpoint="http://${probe_address}:${relay_port}"

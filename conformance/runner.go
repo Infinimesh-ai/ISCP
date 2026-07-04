@@ -39,6 +39,7 @@ type Options struct {
 	Version       string
 	RelayEndpoint string
 	TrustEndpoint string
+	AdminToken    string
 	CLIRunner     func(context.Context) (string, error)
 	CLIWorkflows  func(context.Context) (map[string]string, error)
 	Now           time.Time
@@ -795,12 +796,12 @@ func caseRelayServiceWorkflow(ctx context.Context, opts Options) (map[string]str
 	if err := postServiceJSON(ctx, endpoint+"/v2/relay/devices/refresh-access", map[string]string{"refresh": bound.Refresh.Token}, &refreshed, http.StatusOK); err != nil {
 		return nil, err
 	}
-	env, err := serviceEnvelope(now)
+	env, err := serviceEnvelope(now, dev)
 	if err != nil {
 		return nil, err
 	}
 	var receipt map[string]any
-	if err := postServiceJSON(ctx, endpoint+"/v2/relay/envelopes", env, &receipt, http.StatusAccepted); err != nil {
+	if err := postServiceJSONWithBearer(ctx, endpoint+"/v2/relay/envelopes", bound.Access.Token, env, &receipt, http.StatusAccepted); err != nil {
 		return nil, err
 	}
 	if receipt["status"] != "queued" {
@@ -810,7 +811,7 @@ func caseRelayServiceWorkflow(ctx context.Context, opts Options) (map[string]str
 	if strings.Contains(string(receiptBytes), "service payload") || strings.Contains(string(receiptBytes), "session_key") {
 		return nil, fmt.Errorf("relay receipt leaked plaintext or key material")
 	}
-	if err := postServiceJSON(ctx, endpoint+"/v2/relay/devices/revoke-access", map[string]string{"device_id": dev.Identity.DeviceID}, nil, http.StatusOK); err != nil {
+	if err := postServiceJSONWithBearer(ctx, endpoint+"/v2/relay/devices/revoke-access", refreshed.Access.Token, map[string]string{"device_id": dev.Identity.DeviceID}, nil, http.StatusOK); err != nil {
 		return nil, err
 	}
 	if err := postServiceJSON(ctx, endpoint+"/v2/relay/devices/refresh-access", map[string]string{"refresh": refreshed.Refresh.Token}, nil, http.StatusUnauthorized); err != nil {
@@ -840,7 +841,7 @@ func caseTrustServiceWorkflow(ctx context.Context, opts Options) (map[string]str
 	var auth struct {
 		Grant trust.Grant `json:"grant"`
 	}
-	if err := postServiceJSON(ctx, endpoint+"/v2/trust/devices/authorize", map[string]any{
+	if err := postServiceJSONWithAdmin(ctx, endpoint+"/v2/trust/devices/authorize", opts.AdminToken, map[string]any{
 		"device_id":   dev.Identity.DeviceID,
 		"audience":    "peer-local",
 		"permissions": []string{"text"},
@@ -864,7 +865,7 @@ func caseTrustServiceWorkflow(ctx context.Context, opts Options) (map[string]str
 	if err := postServiceJSON(ctx, endpoint+"/v2/trust/grants/verify", verifyReq, nil, http.StatusOK); err != nil {
 		return nil, err
 	}
-	if err := postServiceJSON(ctx, endpoint+"/v2/trust/devices/revoke", map[string]string{"device_id": dev.Identity.DeviceID, "reason": "conformance"}, nil, http.StatusOK); err != nil {
+	if err := postServiceJSONWithAdmin(ctx, endpoint+"/v2/trust/devices/revoke", opts.AdminToken, map[string]string{"device_id": dev.Identity.DeviceID, "reason": "conformance"}, nil, http.StatusOK); err != nil {
 		return nil, err
 	}
 	if err := postServiceJSON(ctx, endpoint+"/v2/trust/grants/verify", verifyReq, nil, http.StatusForbidden); err != nil {
@@ -1107,12 +1108,8 @@ type serviceCredential struct {
 	Revoked   bool      `json:"revoked"`
 }
 
-func serviceEnvelope(now time.Time) (envelope.SecureEnvelope, error) {
+func serviceEnvelope(now time.Time, a identity.Device) (envelope.SecureEnvelope, error) {
 	p := crypto.NewProvider()
-	a, err := identity.NewDevice(p, "local", "svc-sender-"+randomID(now), now)
-	if err != nil {
-		return envelope.SecureEnvelope{}, err
-	}
 	b, err := identity.NewDevice(p, "local", "svc-recipient-"+randomID(now), now)
 	if err != nil {
 		return envelope.SecureEnvelope{}, err
@@ -1149,6 +1146,26 @@ func serviceEnvelope(now time.Time) (envelope.SecureEnvelope, error) {
 }
 
 func postServiceJSON(ctx context.Context, url string, in any, out any, want int) error {
+	return postServiceJSONWithHeaders(ctx, url, in, out, want, nil)
+}
+
+func postServiceJSONWithBearer(ctx context.Context, url string, bearer string, in any, out any, want int) error {
+	headers := map[string]string{}
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+	}
+	return postServiceJSONWithHeaders(ctx, url, in, out, want, headers)
+}
+
+func postServiceJSONWithAdmin(ctx context.Context, url string, adminToken string, in any, out any, want int) error {
+	headers := map[string]string{}
+	if strings.TrimSpace(adminToken) != "" {
+		headers["X-ISCP-Admin-Token"] = adminToken
+	}
+	return postServiceJSONWithHeaders(ctx, url, in, out, want, headers)
+}
+
+func postServiceJSONWithHeaders(ctx context.Context, url string, in any, out any, want int, headers map[string]string) error {
 	body, err := json.Marshal(in)
 	if err != nil {
 		return err
@@ -1158,6 +1175,11 @@ func postServiceJSON(ctx context.Context, url string, in any, out any, want int)
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	for key, value := range headers {
+		if strings.TrimSpace(value) != "" {
+			req.Header.Set(key, value)
+		}
+	}
 	client := &http.Client{Timeout: 10 * time.Second}
 	resp, err := client.Do(req)
 	if err != nil {

@@ -1,3 +1,10 @@
+{{- $trustBaseURL := default (printf "http://iscp-trust-root:%v" .Values.trustRoot.port) .Values.trustRoot.baseURL -}}
+{{- if and (eq .Values.profile "production") (not .Values.admin.existingSecret) -}}
+{{- fail "production profile requires admin.existingSecret" -}}
+{{- end -}}
+{{- if and (eq .Values.profile "production") (not .Values.postgres.externalURL) (not .Values.postgres.existingSecret) -}}
+{{- fail "production profile requires postgres.externalURL or postgres.existingSecret" -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -18,18 +25,41 @@ spec:
         - name: trust-root
           image: {{ .Values.trustRoot.image }}
           ports:
-            - containerPort: {{ .Values.trustRoot.port }}
+            - name: http
+              containerPort: {{ .Values.trustRoot.port }}
           env:
             - name: ISCP_PROFILE
               value: {{ .Values.profile | quote }}
             - name: ISCP_DOMAIN_ID
               value: {{ .Values.domainID | quote }}
+            - name: ISCP_TRUST_ROOT_ID
+              value: {{ .Values.trustRoot.id | quote }}
+            - name: ISCP_TRUST_ADDR
+              value: {{ printf ":%v" .Values.trustRoot.port | quote }}
+            - name: ISCP_TRUST_BASE_URL
+              value: {{ $trustBaseURL | quote }}
+            {{- if .Values.admin.existingSecret }}
+            - name: ISCP_ADMIN_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.admin.existingSecret | quote }}
+                  key: {{ .Values.admin.tokenKey | quote }}
+            {{- end }}
+            {{- if .Values.postgres.externalURL }}
+            - name: ISCP_DATABASE_URL
+              value: {{ .Values.postgres.externalURL | quote }}
+            {{- else if .Values.postgres.existingSecret }}
+            - name: ISCP_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.postgres.existingSecret | quote }}
+                  key: {{ .Values.postgres.urlKey | quote }}
+            {{- end }}
           readinessProbe:
             httpGet:
               path: /readyz
-              port: {{ .Values.trustRoot.port }}
+              port: http
           livenessProbe:
             httpGet:
               path: /livez
-              port: {{ .Values.trustRoot.port }}
-
+              port: http
