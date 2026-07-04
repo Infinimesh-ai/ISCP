@@ -11,6 +11,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/config"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/envelope"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
@@ -155,6 +156,41 @@ func TestRelayConnectDeliversQueuedEnvelope(t *testing.T) {
 	}
 }
 
+func TestProductionRelayEnvelopeRequiresAccessProof(t *testing.T) {
+	srv, err := New(Config{
+		DomainID:       "domain-a",
+		RelayID:        "relay-a",
+		BaseURL:        "http://relay.test",
+		WebSocketURL:   "ws://relay.test/v2/relay/connect",
+		ProfileGate:    config.DefaultGate(config.ProfileProduction),
+		AdminToken:     "admin-test-token",
+		AllowedOrigins: []string{"http://relay.test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := srv.Handler()
+	p := crypto.NewProvider()
+	now := time.Now().UTC()
+	device, err := identity.NewDevice(p, "domain-a", "device-a", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	access := bindDeviceForTest(t, handler, p, device, "relay-a", "prod-bind")
+	env := secureEnvelopeFixture(t, p, now, device)
+
+	postJSONWithBearer(t, handler, "/v2/relay/envelopes", access.Token, env, http.StatusUnauthorized, nil)
+	proof := accessProofHeaderValue(t, p, device, access.Token, http.MethodPost, "/v2/relay/envelopes", "prod-envelope")
+	postJSONWithHeaders(t, handler, "/v2/relay/envelopes", map[string]string{
+		"Authorization":   "Bearer " + access.Token,
+		accessProofHeader: proof,
+	}, env, http.StatusAccepted, nil)
+	postJSONWithHeaders(t, handler, "/v2/relay/envelopes", map[string]string{
+		"Authorization":   "Bearer " + access.Token,
+		accessProofHeader: proof,
+	}, env, http.StatusUnauthorized, nil)
+}
+
 func secureEnvelopeFixture(t *testing.T, p crypto.Provider, now time.Time, sender identity.Device) envelope.SecureEnvelope {
 	t.Helper()
 	b, err := identity.NewDevice(p, "domain-a", "recipient-a", now)
@@ -223,6 +259,14 @@ func postJSON(t *testing.T, handler http.Handler, path string, req any, want int
 }
 
 func postJSONWithBearer(t *testing.T, handler http.Handler, path string, bearer string, req any, want int, out any) []byte {
+	headers := map[string]string{}
+	if bearer != "" {
+		headers["Authorization"] = "Bearer " + bearer
+	}
+	return postJSONWithHeaders(t, handler, path, headers, req, want, out)
+}
+
+func postJSONWithHeaders(t *testing.T, handler http.Handler, path string, headers map[string]string, req any, want int, out any) []byte {
 	t.Helper()
 	body, err := json.Marshal(req)
 	if err != nil {
@@ -230,8 +274,8 @@ func postJSONWithBearer(t *testing.T, handler http.Handler, path string, bearer 
 	}
 	rr := httptest.NewRecorder()
 	httpReq := httptest.NewRequest(http.MethodPost, path, bytes.NewReader(body))
-	if bearer != "" {
-		httpReq.Header.Set("Authorization", "Bearer "+bearer)
+	for key, value := range headers {
+		httpReq.Header.Set(key, value)
 	}
 	handler.ServeHTTP(rr, httpReq)
 	if rr.Code != want {
@@ -243,4 +287,18 @@ func postJSONWithBearer(t *testing.T, handler http.Handler, path string, bearer 
 		}
 	}
 	return rr.Body.Bytes()
+}
+
+func accessProofHeaderValue(t *testing.T, p crypto.Provider, device identity.Device, accessToken, method, path, nonce string) string {
+	t.Helper()
+	challenge := accessProofChallenge(method, path, crypto.SHA256([]byte(accessToken)))
+	proof, err := device.CreateProof(p, "relay-a", challenge, nonce, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := json.Marshal(proof)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return crypto.Base64URL(raw)
 }

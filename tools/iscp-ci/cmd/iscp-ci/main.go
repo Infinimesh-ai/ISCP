@@ -134,7 +134,7 @@ type cyclonedxLibrary struct {
 
 func main() {
 	if len(os.Args) != 2 {
-		fmt.Fprintln(os.Stderr, "usage: iscp-ci <generate-schemas|generate-openapi|sbom>")
+		fmt.Fprintln(os.Stderr, "usage: iscp-ci <generate-schemas|generate-openapi|traceability|sbom>")
 		os.Exit(2)
 	}
 
@@ -155,6 +155,8 @@ func main() {
 		err = generateSchemas(root)
 	case "generate-openapi":
 		err = generateOpenAPI(root)
+	case "traceability":
+		err = validateTraceability(root)
 	case "sbom":
 		err = generateSBOM(root)
 	default:
@@ -164,6 +166,28 @@ func main() {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
+}
+
+type traceabilityRow struct {
+	ID          string `json:"id"`
+	Requirement string `json:"requirement"`
+	Evidence    string `json:"evidence"`
+	Status      string `json:"status"`
+}
+
+type traceabilitySummary struct {
+	Type                string            `json:"type"`
+	GeneratedAt         string            `json:"generated_at"`
+	SpecFile            string            `json:"spec_file"`
+	MatrixFile          string            `json:"matrix_file"`
+	Status              string            `json:"status"`
+	RequirementCount    int               `json:"requirement_count"`
+	MatrixRowCount      int               `json:"matrix_row_count"`
+	MissingRequirements []string          `json:"missing_requirements"`
+	ExtraRequirements   []string          `json:"extra_requirements"`
+	DuplicateIDs        []string          `json:"duplicate_ids"`
+	Rows                []traceabilityRow `json:"rows"`
+	Errors              []string          `json:"errors"`
 }
 
 func repoRoot() (string, error) {
@@ -478,6 +502,161 @@ func generateOpenAPI(root *os.Root) error {
 	}
 	fmt.Println("OpenAPI validation passed; see dist/openapi-check.json")
 	return nil
+}
+
+func validateTraceability(root *os.Root) error {
+	specName := "spec/security-baseline.md"
+	matrixName := "docs/security/traceability.md"
+	errorsOut := []string{}
+
+	specRaw, err := root.ReadFile(specName)
+	if err != nil {
+		return err
+	}
+	matrixRaw, err := root.ReadFile(matrixName)
+	if err != nil {
+		return err
+	}
+
+	requirements := extractNormativeRequirements(string(specRaw))
+	rows := extractTraceabilityRows(string(matrixRaw), &errorsOut)
+	requirementByNormalized := map[string]string{}
+	for _, requirement := range requirements {
+		normalized := normalizeRequirement(requirement)
+		if previous, ok := requirementByNormalized[normalized]; ok {
+			errorsOut = append(errorsOut, "duplicate normative requirement: "+previous)
+			continue
+		}
+		requirementByNormalized[normalized] = requirement
+	}
+
+	matrixByNormalized := map[string]string{}
+	ids := map[string]string{}
+	duplicateIDs := []string{}
+	for _, row := range rows {
+		if row.ID == "" {
+			errorsOut = append(errorsOut, "traceability row has empty id")
+		}
+		if previous, ok := ids[row.ID]; ok {
+			duplicateIDs = append(duplicateIDs, row.ID)
+			errorsOut = append(errorsOut, "traceability id "+row.ID+" duplicates "+previous)
+		} else {
+			ids[row.ID] = row.Requirement
+		}
+		if strings.TrimSpace(row.Evidence) == "" {
+			errorsOut = append(errorsOut, row.ID+" has empty evidence")
+		}
+		if row.Status != "Covered" {
+			errorsOut = append(errorsOut, row.ID+" status must be Covered")
+		}
+		matrixByNormalized[normalizeRequirement(row.Requirement)] = row.Requirement
+	}
+
+	missing := []string{}
+	for normalized, requirement := range requirementByNormalized {
+		if _, ok := matrixByNormalized[normalized]; !ok {
+			missing = append(missing, requirement)
+		}
+	}
+	extra := []string{}
+	for normalized, requirement := range matrixByNormalized {
+		if _, ok := requirementByNormalized[normalized]; !ok {
+			extra = append(extra, requirement)
+		}
+	}
+	sort.Strings(missing)
+	sort.Strings(extra)
+	sort.Strings(duplicateIDs)
+	if len(missing) > 0 {
+		errorsOut = append(errorsOut, "traceability matrix is missing requirements")
+	}
+	if len(extra) > 0 {
+		errorsOut = append(errorsOut, "traceability matrix contains requirements not in security baseline")
+	}
+
+	status := "pass"
+	if len(errorsOut) > 0 {
+		status = "fail"
+	}
+	summary := traceabilitySummary{
+		Type:                "iscp.traceability.validation.v2",
+		GeneratedAt:         time.Now().UTC().Format(time.RFC3339Nano),
+		SpecFile:            specName,
+		MatrixFile:          matrixName,
+		Status:              status,
+		RequirementCount:    len(requirements),
+		MatrixRowCount:      len(rows),
+		MissingRequirements: missing,
+		ExtraRequirements:   extra,
+		DuplicateIDs:        duplicateIDs,
+		Rows:                rows,
+		Errors:              errorsOut,
+	}
+	if err := writeJSON(root, "dist/traceability-check.json", summary); err != nil {
+		return err
+	}
+	if len(errorsOut) > 0 {
+		return errors.New("traceability validation failed; see dist/traceability-check.json")
+	}
+	fmt.Println("traceability validation passed; see dist/traceability-check.json")
+	return nil
+}
+
+func extractNormativeRequirements(content string) []string {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	lines := strings.Split(content, "\n")
+	requirements := []string{}
+	current := ""
+	flush := func() {
+		if current == "" {
+			return
+		}
+		normalized := normalizeRequirement(current)
+		if strings.Contains(normalized, " MUST ") || strings.Contains(normalized, " MUST NOT ") {
+			requirements = append(requirements, normalized)
+		}
+		current = ""
+	}
+	for _, line := range lines {
+		if strings.HasPrefix(line, "- ") {
+			flush()
+			current = strings.TrimSpace(strings.TrimPrefix(line, "- "))
+			continue
+		}
+		if current != "" && strings.HasPrefix(line, "  ") && strings.TrimSpace(line) != "" {
+			current += " " + strings.TrimSpace(line)
+			continue
+		}
+		flush()
+	}
+	flush()
+	return requirements
+}
+
+func extractTraceabilityRows(content string, errorsOut *[]string) []traceabilityRow {
+	content = strings.ReplaceAll(content, "\r\n", "\n")
+	rows := []traceabilityRow{}
+	for _, line := range strings.Split(content, "\n") {
+		if !strings.HasPrefix(line, "| ISCP-SB-") {
+			continue
+		}
+		parts := strings.Split(line, "|")
+		if len(parts) < 6 {
+			*errorsOut = append(*errorsOut, "malformed traceability row: "+line)
+			continue
+		}
+		rows = append(rows, traceabilityRow{
+			ID:          strings.TrimSpace(parts[1]),
+			Requirement: normalizeRequirement(parts[2]),
+			Evidence:    strings.TrimSpace(parts[3]),
+			Status:      strings.TrimSpace(parts[4]),
+		})
+	}
+	return rows
+}
+
+func normalizeRequirement(value string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
 }
 
 func generateSBOM(root *os.Root) error {

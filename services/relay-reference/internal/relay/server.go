@@ -41,6 +41,8 @@ type Config struct {
 	AllowedOrigins []string
 }
 
+const accessProofHeader = "X-ISCP-Access-Proof"
+
 type Server struct {
 	cfg         Config
 	provider    crypto.Provider
@@ -654,18 +656,88 @@ func (s *Server) authenticateAccess(r *http.Request) (credential, error) {
 	}
 	s.mu.Unlock()
 	if ok && !cred.Revoked && now.Before(cred.ExpiresAt) {
+		if err := s.verifyAccessProof(r, cred, hash); err != nil {
+			return credential{}, err
+		}
 		return cred, nil
 	}
 	if s.repo != nil {
 		dbCred, err := s.repo.GetAccessByHash(r.Context(), repository.DomainID(s.cfg.DomainID), hash, now)
 		if err == nil {
-			return credential{DomainID: string(dbCred.DomainID), DeviceID: dbCred.DeviceID, Hash: dbCred.Hash, ExpiresAt: dbCred.ExpiresAt}, nil
+			cred := credential{DomainID: string(dbCred.DomainID), DeviceID: dbCred.DeviceID, Hash: dbCred.Hash, ExpiresAt: dbCred.ExpiresAt}
+			if err := s.verifyAccessProof(r, cred, hash); err != nil {
+				return credential{}, err
+			}
+			return cred, nil
 		}
 		if err != pgx.ErrNoRows {
 			return credential{}, err
 		}
 	}
 	return credential{}, iscperrors.New(iscperrors.CodeAccessInvalid, "access credential invalid")
+}
+
+func (s *Server) verifyAccessProof(r *http.Request, cred credential, accessHash []byte) error {
+	if s.cfg.ProfileGate.Profile != config.ProfileProduction {
+		return nil
+	}
+	value := strings.TrimSpace(r.Header.Get(accessProofHeader))
+	if value == "" {
+		return iscperrors.New(iscperrors.CodeAccessInvalid, "production relay access requires proof of possession")
+	}
+	raw, err := crypto.DecodeBase64URL(value)
+	if err != nil {
+		return err
+	}
+	var proof identity.DeviceProof
+	if err := json.Unmarshal(raw, &proof); err != nil {
+		return iscperrors.New(iscperrors.CodeAccessInvalid, "invalid relay access proof")
+	}
+	id, ok, err := s.lookupIdentity(r.Context(), cred.DomainID, cred.DeviceID)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return iscperrors.New(iscperrors.CodeAccessInvalid, "access proof identity is unknown")
+	}
+	challenge := accessProofChallenge(r.Method, r.URL.Path, accessHash)
+	return s.verifyProof(id, proof, s.cfg.RelayID, challenge, time.Minute)
+}
+
+func (s *Server) lookupIdentity(ctx context.Context, domainID, deviceID string) (identity.DeviceIdentity, bool, error) {
+	s.mu.RLock()
+	id, ok := s.devices[deviceID]
+	_, revoked := s.revoked[deviceID]
+	s.mu.RUnlock()
+	if ok && !revoked && id.DomainID == domainID {
+		return id, true, nil
+	}
+	if s.repo == nil {
+		return identity.DeviceIdentity{}, false, nil
+	}
+	dbDevice, err := s.repo.GetDevice(ctx, repository.DomainID(domainID), deviceID)
+	if err == pgx.ErrNoRows {
+		return identity.DeviceIdentity{}, false, nil
+	}
+	if err != nil {
+		return identity.DeviceIdentity{}, false, err
+	}
+	if dbDevice.Status == "revoked" {
+		return identity.DeviceIdentity{}, false, nil
+	}
+	if err := json.Unmarshal(dbDevice.IdentityRaw, &id); err != nil {
+		return identity.DeviceIdentity{}, false, err
+	}
+	return id, true, nil
+}
+
+func accessProofChallenge(method, path string, accessHash []byte) string {
+	return strings.Join([]string{
+		"iscp/v2/relay/access-proof",
+		strings.ToUpper(method),
+		path,
+		crypto.Base64URL(accessHash),
+	}, "\x00")
 }
 
 func (s *Server) revokeRefreshCredential(ctx context.Context, token string) error {

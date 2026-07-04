@@ -753,7 +753,17 @@ func caseQueueTTLAndPriority(_ context.Context, opts Options) (map[string]string
 	if out[0].MessageID != "high" || out[1].MessageID != "low" {
 		return nil, fmt.Errorf("queue priority order mismatch")
 	}
-	return map[string]string{"delivered": "2", "expired_dropped": "true"}, nil
+	quota := queue.New(20)
+	if !quota.Enqueue(queue.Message{DomainID: "domain-a", MessageID: "q1", RecipientDeviceID: "device-b", Envelope: []byte("1234567890"), ExpiresAt: now.Add(time.Minute)}, now) {
+		return nil, fmt.Errorf("quota fixture enqueue failed")
+	}
+	if !quota.Enqueue(queue.Message{DomainID: "domain-a", MessageID: "q2", RecipientDeviceID: "device-b", Envelope: []byte("abcdefghij"), ExpiresAt: now.Add(time.Minute)}, now) {
+		return nil, fmt.Errorf("quota fixture second enqueue failed")
+	}
+	if quota.Enqueue(queue.Message{DomainID: "domain-a", MessageID: "overflow", RecipientDeviceID: "device-b", Envelope: []byte("overflow"), ExpiresAt: now.Add(time.Minute)}, now) {
+		return nil, fmt.Errorf("queue accepted message beyond aggregate quota")
+	}
+	return map[string]string{"delivered": "2", "expired_dropped": "true", "quota_backpressure": "true"}, nil
 }
 
 func caseRelayEndpointHealth(ctx context.Context, opts Options) (map[string]string, error) {

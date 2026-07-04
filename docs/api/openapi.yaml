@@ -52,9 +52,10 @@ paths:
       summary: Submit an opaque SecureEnvelope
       security:
         - RelayAccess: []
+          RelayAccessProof: []
       responses:
         "202": { description: Relay receipt }
-        "401": { description: Missing or invalid relay access credential }
+        "401": { description: Missing or invalid relay access credential or production proof }
         "403": { description: Access credential does not match envelope sender }
   /v2/relay/admin/devices:
     get:
@@ -159,6 +160,11 @@ components:
       type: http
       scheme: bearer
       description: Relay access credential issued by bind-self or refresh-access.
+    RelayAccessProof:
+      type: apiKey
+      in: header
+      name: X-ISCP-Access-Proof
+      description: Base64url encoded DeviceProof required for production Relay envelope submission.
     AdminToken:
       type: apiKey
       in: header

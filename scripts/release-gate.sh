@@ -276,6 +276,7 @@ if [[ "${failed}" -eq 0 ]]; then run_gate "govulncheck" "./scripts/govulncheck.s
 if [[ "${failed}" -eq 0 ]]; then run_gate "gosec" "./scripts/gosec.sh" ./scripts/gosec.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "generate-openapi" "./scripts/generate-openapi.sh" ./scripts/generate-openapi.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "generate-schemas" "./scripts/generate-schemas.sh" ./scripts/generate-schemas.sh || true; fi
+if [[ "${failed}" -eq 0 ]]; then run_gate "traceability" "./scripts/traceability.sh" ./scripts/traceability.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "sbom" "./scripts/sbom.sh" ./scripts/sbom.sh || true; fi
 if [[ "${failed}" -eq 0 ]]; then run_gate "conformance-release-validation" "go" invoke_go run ./tools/iscp-cli/cmd/iscp conformance validate-report --release --output conformance/report.json || true; fi
 

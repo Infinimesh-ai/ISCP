@@ -36,6 +36,7 @@ generated conformance report reaches a Go decision.
 ./scripts/gosec.sh
 ./scripts/generate-openapi.sh
 ./scripts/generate-schemas.sh
+./scripts/traceability.sh
 ./scripts/sbom.sh
 ./scripts/release-gate.sh
 ```
@@ -52,3 +53,7 @@ The OpenAPI gate validates the checked-in OpenAPI 3.1 document against the
 Relay and Trust Root public route registrations. The JSON Schema gate validates
 the schema manifest, JSON parseability, schema IDs, object type constants,
 closed top-level objects, and signature definitions.
+
+The traceability gate validates that every MUST and MUST NOT in
+`spec/security-baseline.md` is represented in
+`docs/security/traceability.md` with Covered status and evidence.
