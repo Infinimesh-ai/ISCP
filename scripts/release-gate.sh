@@ -24,7 +24,16 @@ json_string() {
 }
 
 duration_now_ms() {
-    date +%s%3N
+    local seconds nanos millis
+    seconds="$(date +%s)"
+    nanos="$(date +%N 2>/dev/null || printf '0')"
+    if [[ "${nanos}" =~ ^[0-9]+$ ]]; then
+        nanos="${nanos}000"
+        millis="${nanos:0:3}"
+    else
+        millis="0"
+    fi
+    printf '%s%03d\n' "${seconds}" "$((10#${millis}))"
 }
 
 host_probe_address() {
