@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: ISCP API
-  version: 0.1.0
+  version: 0.2.0
   summary: API-first ISCP protocol v2 reference services
 servers:
   - url: http://localhost:8080

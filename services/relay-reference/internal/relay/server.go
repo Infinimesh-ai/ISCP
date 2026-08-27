@@ -177,7 +177,7 @@ func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) version(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": "0.1.0-dev", "protocol": "v2"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": "0.2.0-dev", "protocol": "v2"})
 }
 
 func (s *Server) wellKnown(w http.ResponseWriter, _ *http.Request) {
