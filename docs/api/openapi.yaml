@@ -17,14 +17,18 @@ paths:
           description: Signed relay descriptor and pin
   /v2/relay/devices/bind-self:
     post:
-      summary: Bind a device to relay access using DeviceIdentity and DeviceProof
+      summary: Bootstrap a first device using DeviceIdentity, DeviceProof, and an actor authorization
       responses:
         "200": { description: Access and refresh credentials }
+        "401": { description: Invalid proof, or missing actor authorization in production }
   /v2/relay/devices/register-with-ticket:
     post:
-      summary: Register a device using a pairing ticket
+      summary: Register an invited device using a signed pairing ticket
       responses:
         "200": { description: Access and refresh credentials }
+        "400": { description: Missing signed ticket object in production }
+        "401": { description: Invalid proof or proof challenge not bound to the ticket id }
+        "403": { description: Ticket invalid, not bound to this relay, or consumed by its grant audience }
         "409": { description: Ticket already consumed }
   /v2/relay/devices/refresh-access:
     post:

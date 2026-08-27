@@ -30,6 +30,7 @@ var expectedSchemas = []schemaManifestEntry{
 	{File: "device.proof.v2.json", ObjectType: "iscp.device.proof.v2"},
 	{File: "error.v2.json", ObjectType: "iscp.error.v2"},
 	{File: "pairing_ticket.v2.json", ObjectType: "iscp.pairing_ticket.v2"},
+	{File: "pairing_ticket.v3.json", ObjectType: "iscp.pairing_ticket.v3"},
 	{File: "provisioning.bundle.v2.json", ObjectType: "iscp.provisioning.bundle.v2"},
 	{File: "relay.descriptor.v2.json", ObjectType: "iscp.relay.descriptor.v2"},
 	{File: "secure_envelope.v2.json", ObjectType: "iscp.secure_envelope.v2"},
@@ -43,6 +44,7 @@ var expectedSchemas = []schemaManifestEntry{
 var signedSchemas = map[string]bool{
 	"device.proof.v2.json":        true,
 	"pairing_ticket.v2.json":      true,
+	"pairing_ticket.v3.json":      true,
 	"provisioning.bundle.v2.json": true,
 	"session.hello.v2.json":       true,
 	"session.ready.v2.json":       true,
