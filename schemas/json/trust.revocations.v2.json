@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/trust.revocations.v2.json",
+  "title": "ISCP Trust Revocations v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "items"],
+  "properties": {
+    "type": { "const": "iscp.trust.revocations.v2" },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["revocation_id", "domain_id", "reason_code", "effective_at"],
+        "properties": {
+          "revocation_id": { "type": "string", "minLength": 1 },
+          "domain_id": { "type": "string", "minLength": 1 },
+          "device_id": { "type": "string", "minLength": 1 },
+          "grant_id": { "type": "string", "minLength": 1 },
+          "reason_code": { "type": "string" },
+          "effective_at": { "type": "string", "format": "date-time" }
+        },
+        "anyOf": [
+          { "required": ["device_id"] },
+          { "required": ["grant_id"] }
+        ]
+      }
+    },
+    "next_cursor": { "type": "string", "minLength": 1 }
+  }
+}

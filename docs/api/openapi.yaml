@@ -119,8 +119,20 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: domain_id
+          in: query
+          required: false
+          description: Optional for single-domain deployments; required by multi-tenant deployments. A mismatch is indistinguishable from not-found.
+          schema: { type: string }
       responses:
-        "200": { description: Device status }
+        "200":
+          description: Device status
+          content:
+            application/json:
+              schema:
+                $ref: "../../schemas/json/trust.device_status.v2.json"
+        "404": { description: Device not found or domain scope mismatch }
+        "429": { description: Rate limit exceeded }
   /v2/trust/grants/verify:
     post:
       summary: Verify Trust Grant permission, audience, confirmation, relay, and revocation
@@ -135,13 +147,56 @@ paths:
           in: query
           required: true
           schema: { type: string }
+        - name: domain_id
+          in: query
+          required: false
+          description: Optional; when supplied a mismatch is indistinguishable from not-found so cross-domain grant IDs cannot be probed.
+          schema: { type: string }
       responses:
-        "200": { description: Grant status }
+        "200":
+          description: Grant status
+          content:
+            application/json:
+              schema:
+                $ref: "../../schemas/json/trust.grant_status.v2.json"
+        "404": { description: Grant not found or domain scope mismatch }
+        "429": { description: Rate limit exceeded }
+  /v2/trust/grants/revoke:
+    post:
+      summary: Revoke a Trust Grant
+      security:
+        - AdminToken: []
+      responses:
+        "200": { description: Grant revoked }
+        "401": { description: Missing admin credential }
+        "404": { description: Grant not found }
   /v2/trust/revocations:
     get:
-      summary: List revocation epochs
+      summary: List device and grant revocations
+      parameters:
+        - name: domain_id
+          in: query
+          required: false
+          description: Optional for single-domain deployments; required by multi-tenant deployments.
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, minimum: 1, maximum: 200 }
+        - name: cursor
+          in: query
+          required: false
+          description: Opaque pagination cursor from a prior response's next_cursor.
+          schema: { type: string }
       responses:
-        "200": { description: Revocations }
+        "200":
+          description: Revocations
+          content:
+            application/json:
+              schema:
+                $ref: "../../schemas/json/trust.revocations.v2.json"
+        "400": { description: Invalid limit }
+        "429": { description: Rate limit exceeded }
   /v2/trust/keys/rotate:
     post:
       summary: Rotate Trust Root signing key next to active

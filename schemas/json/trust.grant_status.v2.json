@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/trust.grant_status.v2.json",
+  "title": "ISCP Trust Grant Status v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "status", "grant"],
+  "properties": {
+    "type": { "const": "iscp.trust.grant_status.v2" },
+    "status": { "enum": ["active", "revoked", "expired"] },
+    "grant": { "$ref": "https://schemas.iscp.dev/json/trust_grant.v2.json" }
+  }
+}

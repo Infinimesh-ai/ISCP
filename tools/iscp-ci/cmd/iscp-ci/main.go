@@ -37,6 +37,9 @@ var expectedSchemas = []schemaManifestEntry{
 	{File: "session.hello.v2.json", ObjectType: "iscp.session.hello.v2"},
 	{File: "session.ready.v2.json", ObjectType: "iscp.session.ready.v2"},
 	{File: "signed_descriptor.v2.json", ObjectType: "iscp.signed_descriptor.v2"},
+	{File: "trust.device_status.v2.json", ObjectType: "iscp.trust.device_status.v2"},
+	{File: "trust.grant_status.v2.json", ObjectType: "iscp.trust.grant_status.v2"},
+	{File: "trust.revocations.v2.json", ObjectType: "iscp.trust.revocations.v2"},
 	{File: "trust_grant.v2.json", ObjectType: "iscp.trust_grant.v2"},
 	{File: "trust_root.descriptor.v2.json", ObjectType: "iscp.trust_root.descriptor.v2"},
 }
@@ -75,6 +78,7 @@ var expectedMethods = []methodManifestEntry{
 	{Path: "/v2/trust/devices/status", Method: "get"},
 	{Path: "/v2/trust/grants/verify", Method: "post"},
 	{Path: "/v2/trust/grants/status", Method: "get"},
+	{Path: "/v2/trust/grants/revoke", Method: "post"},
 	{Path: "/v2/trust/revocations", Method: "get"},
 	{Path: "/v2/trust/keys/rotate", Method: "post"},
 	{Path: "/v2/trust/admin/audit", Method: "get"},
