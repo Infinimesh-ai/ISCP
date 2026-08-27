@@ -15,6 +15,15 @@ access, routes opaque envelopes, stores offline queues, and emits relay receipts
 - `GET /v2/relay/admin/connections`
 - `GET /v2/relay/admin/messages`
 
+Optional device lifecycle endpoints, offered by deployments that operate the
+relay and trust root together and advertised via relay descriptor `metadata`
+capability keys (see spec/device-lifecycle.md):
+
+- `POST /v2/relay/devices/renew-grant` (optional)
+- `POST /v2/relay/devices/auto-renew-grant` (optional)
+- `POST /v2/relay/devices/recover-credentials` (optional)
+- `POST /v2/relay/devices/repair-recovery-anchor` (optional)
+
 `bind-self` is the first-device bootstrap transport and is actor-authorized:
 production deployments MUST gate it behind an external actor authorization in
 addition to the device proof (spec/provisioning.md).

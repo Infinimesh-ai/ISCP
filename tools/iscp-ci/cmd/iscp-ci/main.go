@@ -32,6 +32,7 @@ var expectedSchemas = []schemaManifestEntry{
 	{File: "pairing_ticket.v2.json", ObjectType: "iscp.pairing_ticket.v2"},
 	{File: "pairing_ticket.v3.json", ObjectType: "iscp.pairing_ticket.v3"},
 	{File: "provisioning.bundle.v2.json", ObjectType: "iscp.provisioning.bundle.v2"},
+	{File: "relay.credential_recovery.wrapped.v2.json", ObjectType: "iscp.relay.credential_recovery.wrapped.v2"},
 	{File: "relay.descriptor.v2.json", ObjectType: "iscp.relay.descriptor.v2"},
 	{File: "secure_envelope.v2.json", ObjectType: "iscp.secure_envelope.v2"},
 	{File: "session.close.v1.json", ObjectType: "iscp.session.close.v1"},
@@ -554,7 +555,7 @@ var specEndpointSources = []struct {
 	{SpecFile: "spec/trust-root.md", Prefixes: []string{"/.well-known/iscp/trust-root", "/v2/trust/"}},
 }
 
-var specEndpointRe = regexp.MustCompile("(?m)^- `(GET|POST) (/[^`]+)`")
+var specEndpointRe = regexp.MustCompile("(?m)^- `(GET|POST) (/[^`]+)`( \\(optional\\))?")
 
 // validateSpecEndpoints cross-checks the endpoint lists written in the protocol
 // spec documents against the OpenAPI method manifest, so spec prose cannot
@@ -568,8 +569,10 @@ func validateSpecEndpoints(root *os.Root, methodByPath map[string]string) []stri
 			continue
 		}
 		specListed := map[string]string{}
+		specOptional := map[string]bool{}
 		for _, match := range specEndpointRe.FindAllStringSubmatch(string(raw), -1) {
 			specListed[match[2]] = strings.ToLower(match[1])
+			specOptional[match[2]] = match[3] != ""
 		}
 		if len(specListed) == 0 {
 			errorsOut = append(errorsOut, source.SpecFile+" lists no endpoints in the expected `- `METHOD /path`` form")
@@ -578,6 +581,11 @@ func validateSpecEndpoints(root *os.Root, methodByPath map[string]string) []stri
 		for path, method := range specListed {
 			expected, ok := methodByPath[path]
 			if !ok {
+				// Optional endpoints are spec surface without a reference
+				// implementation route; they are exempt from the manifest.
+				if specOptional[path] {
+					continue
+				}
 				errorsOut = append(errorsOut, source.SpecFile+" lists endpoint not present in the OpenAPI method manifest: "+strings.ToUpper(method)+" "+path)
 				continue
 			}
