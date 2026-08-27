@@ -203,3 +203,12 @@ func Thumbprint(keyType string, public []byte) string {
 	input = append(input, public...)
 	return Base64URL(SHA256(input))
 }
+
+// RandomBytes returns n cryptographically random bytes.
+func RandomBytes(n int) []byte {
+	out := make([]byte, n)
+	if _, err := rand.Read(out); err != nil {
+		panic(err)
+	}
+	return out
+}
