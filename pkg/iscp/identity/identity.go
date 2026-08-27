@@ -112,6 +112,12 @@ func VerifyProof(provider crypto.Provider, id DeviceIdentity, proof DeviceProof,
 	if err != nil {
 		return err
 	}
+	if id.PublicKey.KID != crypto.Thumbprint(id.PublicKey.KTY, pubBytes) {
+		return iscperrors.New(iscperrors.CodeKeyInvalid, "identity kid does not match public key thumbprint")
+	}
+	if proof.Signature.KID != id.PublicKey.KID {
+		return iscperrors.New(iscperrors.CodeKeyInvalid, "proof signature kid does not match identity key")
+	}
 	pub, err := crypto.Ed25519PublicKeyFromBytes(pubBytes)
 	if err != nil {
 		return err

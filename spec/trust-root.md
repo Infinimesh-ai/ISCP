@@ -9,9 +9,9 @@ revocations, signing key rotation, and audit chain.
 - `POST /v2/trust/devices/submit`
 - `POST /v2/trust/devices/authorize`
 - `POST /v2/trust/devices/revoke`
-- `GET /v2/trust/devices/{device_id}/status`
+- `GET /v2/trust/devices/status`
 - `POST /v2/trust/grants/verify`
-- `GET /v2/trust/grants/{grant_id}/status`
+- `GET /v2/trust/grants/status`
 - `GET /v2/trust/revocations`
 - `POST /v2/trust/keys/rotate`
 - `GET /v2/trust/admin/audit`

@@ -507,6 +507,8 @@ func generateOpenAPI(root *os.Root) error {
 		}
 	}
 
+	errorsOut = append(errorsOut, validateSpecEndpoints(root, methodByPath)...)
+
 	status := "pass"
 	if len(errorsOut) > 0 {
 		status = "fail"
@@ -532,6 +534,64 @@ func generateOpenAPI(root *os.Root) error {
 	}
 	fmt.Println("OpenAPI validation passed; see dist/openapi-check.json")
 	return nil
+}
+
+var specEndpointSources = []struct {
+	SpecFile string
+	Prefixes []string
+}{
+	{SpecFile: "spec/relay.md", Prefixes: []string{"/.well-known/iscp/relay", "/v2/relay/"}},
+	{SpecFile: "spec/trust-root.md", Prefixes: []string{"/.well-known/iscp/trust-root", "/v2/trust/"}},
+}
+
+var specEndpointRe = regexp.MustCompile("(?m)^- `(GET|POST) (/[^`]+)`")
+
+// validateSpecEndpoints cross-checks the endpoint lists written in the protocol
+// spec documents against the OpenAPI method manifest, so spec prose cannot
+// drift from the machine-validated route surface again (issue #5).
+func validateSpecEndpoints(root *os.Root, methodByPath map[string]string) []string {
+	errorsOut := []string{}
+	for _, source := range specEndpointSources {
+		raw, err := root.ReadFile(filepath.FromSlash(source.SpecFile))
+		if err != nil {
+			errorsOut = append(errorsOut, "spec endpoint source is missing: "+source.SpecFile)
+			continue
+		}
+		specListed := map[string]string{}
+		for _, match := range specEndpointRe.FindAllStringSubmatch(string(raw), -1) {
+			specListed[match[2]] = strings.ToLower(match[1])
+		}
+		if len(specListed) == 0 {
+			errorsOut = append(errorsOut, source.SpecFile+" lists no endpoints in the expected `- `METHOD /path`` form")
+			continue
+		}
+		for path, method := range specListed {
+			expected, ok := methodByPath[path]
+			if !ok {
+				errorsOut = append(errorsOut, source.SpecFile+" lists endpoint not present in the OpenAPI method manifest: "+strings.ToUpper(method)+" "+path)
+				continue
+			}
+			if expected != method {
+				errorsOut = append(errorsOut, source.SpecFile+" documents "+strings.ToUpper(method)+" "+path+" but the OpenAPI method manifest expects "+strings.ToUpper(expected))
+			}
+		}
+		for path, method := range methodByPath {
+			covered := false
+			for _, prefix := range source.Prefixes {
+				if path == prefix || strings.HasPrefix(path, prefix) {
+					covered = true
+					break
+				}
+			}
+			if !covered {
+				continue
+			}
+			if _, ok := specListed[path]; !ok {
+				errorsOut = append(errorsOut, source.SpecFile+" is missing endpoint documented in the OpenAPI method manifest: "+strings.ToUpper(method)+" "+path)
+			}
+		}
+	}
+	return errorsOut
 }
 
 func validateTraceability(root *os.Root) error {
