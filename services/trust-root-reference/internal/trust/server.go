@@ -437,9 +437,13 @@ func (s *Server) deviceStatus(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusNotFound, iscperrors.New(iscperrors.CodeTrustInvalid, "device not found"))
 		return
 	}
+	// The public read must not echo submitted identity metadata
+	// (spec/trust-root.md: the nested identity MUST NOT include metadata).
+	publicIdentity := rec.Identity
+	publicIdentity.Metadata = nil
 	httpx.WriteJSON(w, http.StatusOK, deviceStatusResponse{
 		Type:                TypeDeviceStatus,
-		Identity:            rec.Identity,
+		Identity:            publicIdentity,
 		DomainID:            rec.Identity.DomainID,
 		DeviceID:            rec.Identity.DeviceID,
 		Status:              rec.Status,
