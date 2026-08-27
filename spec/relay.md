@@ -15,6 +15,27 @@ access, routes opaque envelopes, stores offline queues, and emits relay receipts
 - `GET /v2/relay/admin/connections`
 - `GET /v2/relay/admin/messages`
 
+Optional device lifecycle endpoints, offered by deployments that operate the
+relay and trust root together and advertised via relay descriptor `metadata`
+capability keys (see spec/device-lifecycle.md):
+
+- `POST /v2/relay/devices/renew-grant` (optional)
+- `POST /v2/relay/devices/auto-renew-grant` (optional)
+- `POST /v2/relay/devices/recover-credentials` (optional)
+- `POST /v2/relay/devices/repair-recovery-anchor` (optional)
+
+`bind-self` is the first-device bootstrap transport and is actor-authorized:
+production deployments MUST gate it behind an external actor authorization in
+addition to the device proof (spec/provisioning.md).
+
+`register-with-ticket` consumes a signed pairing ticket. Production
+deployments MUST require the full signed `iscp.pairing_ticket.v3` object,
+verify its signature against the Trust Root, and require the device proof
+challenge to equal the `ticket_id`; accepting a bare ticket identifier with a
+self-reported challenge is a local-lab behavior. Ticket consumption enforces
+the grant role invariants defined in spec/provisioning.md, including rejecting
+consumption by the ticket's `grant_audience`.
+
 Production Relay envelope submission requires both a bearer access credential
 and proof of possession in `X-ISCP-Access-Proof`. The proof is a base64url
 encoded `iscp.device.proof.v2` over this challenge:

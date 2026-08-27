@@ -302,6 +302,9 @@ func p0CoreCases() []caseDef {
 		{"P0-CORE-004", "session ready confirms transcript and keys", caseSessionReadyValid},
 		{"P0-CORE-005", "secure envelope round trips after ready", caseEnvelopeE2EValid},
 		{"P0-CORE-006", "provisioning ticket and bundle verify", caseProvisioningValid},
+		{"P0-CORE-007", "pairing ticket v3 binds purpose and grant roles", caseTicketV3Valid},
+		{"P0-CORE-008", "session reopen control frame verifies", caseSessionReopenValid},
+		{"P0-CORE-009", "credential recovery sealed blob round trips", caseRecoverySealValid},
 	}
 }
 
@@ -323,6 +326,10 @@ func p0SecurityCases() []caseDef {
 		{"P0-SEC-014", "bundle binding mismatch is rejected", caseBundleBindingRejected},
 		{"P0-SEC-015", "bundle before local channel ready is rejected", caseBundleNotReadyRejected},
 		{"P0-SEC-016", "logs redact secret-bearing fields", caseSecretRedaction},
+		{"P0-SEC-017", "identity with forged kid is rejected", caseForgedKIDRejected},
+		{"P0-SEC-018", "ticket consumed by its grant audience is rejected", caseTicketAudienceReversalRejected},
+		{"P0-SEC-019", "session reopen outside window is rejected", caseReopenWindowRejected},
+		{"P0-SEC-020", "recovery blob bound to another identity fails to open", caseRecoveryTranscriptRejected},
 	}
 }
 

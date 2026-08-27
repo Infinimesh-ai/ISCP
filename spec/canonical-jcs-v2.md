@@ -12,8 +12,11 @@ avoid ambiguity and implementation-dependent behavior.
 - Object members are ordered lexicographically by Unicode code point.
 - Strings are encoded using Go `encoding/json` compatible escaping.
 - Unknown top-level fields are rejected by schema and Core SDK object parsers.
-- Extensions are allowed only under an `extensions` object and only when the
-  extension name is not marked critical by an unsupported `critical` entry.
+- An `extensions` object is accepted only where an object's published schema
+  explicitly defines one. No v2 core object schema defines one: platform
+  extensions MUST be carried outside protocol objects (for example in platform
+  API responses or descriptor `metadata`), never as extra fields on signed v2
+  objects.
 - Signature fields are removed before canonicalization for signed objects.
 - Bytes are represented as unpadded base64url strings.
 - Timestamps use RFC3339 UTC with seconds precision unless the schema states

@@ -36,6 +36,16 @@ type TrustGrant struct {
 	RevokedAt              *time.Time
 }
 
+type TrustRevocation struct {
+	ID              string
+	DomainID        DomainID
+	SubjectType     string
+	SubjectID       string
+	RevocationEpoch int64
+	Reason          string
+	CreatedAt       time.Time
+}
+
 type TrustRepository struct {
 	db Queryer
 }
@@ -162,6 +172,59 @@ revocation_epoch = EXCLUDED.revocation_epoch`,
 		grant.RevocationEpoch,
 	)
 	return err
+}
+
+func (r TrustRepository) RevokeGrant(ctx context.Context, revocationID string, domainID DomainID, grantID string, reason string, now time.Time) error {
+	if err := RequireDomain(domainID); err != nil {
+		return err
+	}
+	tag, err := r.db.Exec(ctx, `
+UPDATE iscp_trust.grants
+SET revoked_at=$3
+WHERE domain_id=$1 AND grant_id=$2 AND revoked_at IS NULL`, string(domainID), grantID, now)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return pgx.ErrNoRows
+	}
+	_, err = r.db.Exec(ctx, `
+INSERT INTO iscp_trust.revocations
+(id, domain_id, subject_type, subject_id, revocation_epoch, reason, created_at)
+SELECT $3, domain_id, 'grant', grant_id, revocation_epoch, $4, $5
+FROM iscp_trust.grants
+WHERE domain_id=$1 AND grant_id=$2`, string(domainID), grantID, revocationID, reason, now)
+	return err
+}
+
+func (r TrustRepository) ListRevocations(ctx context.Context, domainID DomainID, afterID string, limit int) ([]TrustRevocation, error) {
+	if err := RequireDomain(domainID); err != nil {
+		return nil, err
+	}
+	if limit <= 0 || limit > 200 {
+		limit = 100
+	}
+	rows, err := r.db.Query(ctx, `
+SELECT id, domain_id, subject_type, subject_id, revocation_epoch, reason, created_at
+FROM iscp_trust.revocations
+WHERE domain_id=$1 AND ($2 = '' OR id::text > $2)
+ORDER BY id
+LIMIT $3`, string(domainID), afterID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []TrustRevocation{}
+	for rows.Next() {
+		var rec TrustRevocation
+		var domain string
+		if err := rows.Scan(&rec.ID, &domain, &rec.SubjectType, &rec.SubjectID, &rec.RevocationEpoch, &rec.Reason, &rec.CreatedAt); err != nil {
+			return nil, err
+		}
+		rec.DomainID = DomainID(domain)
+		out = append(out, rec)
+	}
+	return out, rows.Err()
 }
 
 func (r TrustRepository) GetGrant(ctx context.Context, domainID DomainID, grantID string) (TrustGrant, error) {

@@ -30,12 +30,19 @@ var expectedSchemas = []schemaManifestEntry{
 	{File: "device.proof.v2.json", ObjectType: "iscp.device.proof.v2"},
 	{File: "error.v2.json", ObjectType: "iscp.error.v2"},
 	{File: "pairing_ticket.v2.json", ObjectType: "iscp.pairing_ticket.v2"},
+	{File: "pairing_ticket.v3.json", ObjectType: "iscp.pairing_ticket.v3"},
 	{File: "provisioning.bundle.v2.json", ObjectType: "iscp.provisioning.bundle.v2"},
+	{File: "relay.credential_recovery.wrapped.v2.json", ObjectType: "iscp.relay.credential_recovery.wrapped.v2"},
 	{File: "relay.descriptor.v2.json", ObjectType: "iscp.relay.descriptor.v2"},
 	{File: "secure_envelope.v2.json", ObjectType: "iscp.secure_envelope.v2"},
+	{File: "session.close.v1.json", ObjectType: "iscp.session.close.v1"},
 	{File: "session.hello.v2.json", ObjectType: "iscp.session.hello.v2"},
 	{File: "session.ready.v2.json", ObjectType: "iscp.session.ready.v2"},
+	{File: "session.reopen.v1.json", ObjectType: "iscp.session.reopen.v1"},
 	{File: "signed_descriptor.v2.json", ObjectType: "iscp.signed_descriptor.v2"},
+	{File: "trust.device_status.v2.json", ObjectType: "iscp.trust.device_status.v2"},
+	{File: "trust.grant_status.v2.json", ObjectType: "iscp.trust.grant_status.v2"},
+	{File: "trust.revocations.v2.json", ObjectType: "iscp.trust.revocations.v2"},
 	{File: "trust_grant.v2.json", ObjectType: "iscp.trust_grant.v2"},
 	{File: "trust_root.descriptor.v2.json", ObjectType: "iscp.trust_root.descriptor.v2"},
 }
@@ -43,9 +50,12 @@ var expectedSchemas = []schemaManifestEntry{
 var signedSchemas = map[string]bool{
 	"device.proof.v2.json":        true,
 	"pairing_ticket.v2.json":      true,
+	"pairing_ticket.v3.json":      true,
 	"provisioning.bundle.v2.json": true,
+	"session.close.v1.json":       true,
 	"session.hello.v2.json":       true,
 	"session.ready.v2.json":       true,
+	"session.reopen.v1.json":      true,
 	"signed_descriptor.v2.json":   true,
 	"trust_grant.v2.json":         true,
 }
@@ -73,6 +83,7 @@ var expectedMethods = []methodManifestEntry{
 	{Path: "/v2/trust/devices/status", Method: "get"},
 	{Path: "/v2/trust/grants/verify", Method: "post"},
 	{Path: "/v2/trust/grants/status", Method: "get"},
+	{Path: "/v2/trust/grants/revoke", Method: "post"},
 	{Path: "/v2/trust/revocations", Method: "get"},
 	{Path: "/v2/trust/keys/rotate", Method: "post"},
 	{Path: "/v2/trust/admin/audit", Method: "get"},
@@ -507,6 +518,8 @@ func generateOpenAPI(root *os.Root) error {
 		}
 	}
 
+	errorsOut = append(errorsOut, validateSpecEndpoints(root, methodByPath)...)
+
 	status := "pass"
 	if len(errorsOut) > 0 {
 		status = "fail"
@@ -532,6 +545,71 @@ func generateOpenAPI(root *os.Root) error {
 	}
 	fmt.Println("OpenAPI validation passed; see dist/openapi-check.json")
 	return nil
+}
+
+var specEndpointSources = []struct {
+	SpecFile string
+	Prefixes []string
+}{
+	{SpecFile: "spec/relay.md", Prefixes: []string{"/.well-known/iscp/relay", "/v2/relay/"}},
+	{SpecFile: "spec/trust-root.md", Prefixes: []string{"/.well-known/iscp/trust-root", "/v2/trust/"}},
+}
+
+var specEndpointRe = regexp.MustCompile("(?m)^- `(GET|POST) (/[^`]+)`( \\(optional\\))?")
+
+// validateSpecEndpoints cross-checks the endpoint lists written in the protocol
+// spec documents against the OpenAPI method manifest, so spec prose cannot
+// drift from the machine-validated route surface again (issue #5).
+func validateSpecEndpoints(root *os.Root, methodByPath map[string]string) []string {
+	errorsOut := []string{}
+	for _, source := range specEndpointSources {
+		raw, err := root.ReadFile(filepath.FromSlash(source.SpecFile))
+		if err != nil {
+			errorsOut = append(errorsOut, "spec endpoint source is missing: "+source.SpecFile)
+			continue
+		}
+		specListed := map[string]string{}
+		specOptional := map[string]bool{}
+		for _, match := range specEndpointRe.FindAllStringSubmatch(string(raw), -1) {
+			specListed[match[2]] = strings.ToLower(match[1])
+			specOptional[match[2]] = match[3] != ""
+		}
+		if len(specListed) == 0 {
+			errorsOut = append(errorsOut, source.SpecFile+" lists no endpoints in the expected `- `METHOD /path`` form")
+			continue
+		}
+		for path, method := range specListed {
+			expected, ok := methodByPath[path]
+			if !ok {
+				// Optional endpoints are spec surface without a reference
+				// implementation route; they are exempt from the manifest.
+				if specOptional[path] {
+					continue
+				}
+				errorsOut = append(errorsOut, source.SpecFile+" lists endpoint not present in the OpenAPI method manifest: "+strings.ToUpper(method)+" "+path)
+				continue
+			}
+			if expected != method {
+				errorsOut = append(errorsOut, source.SpecFile+" documents "+strings.ToUpper(method)+" "+path+" but the OpenAPI method manifest expects "+strings.ToUpper(expected))
+			}
+		}
+		for path, method := range methodByPath {
+			covered := false
+			for _, prefix := range source.Prefixes {
+				if path == prefix || strings.HasPrefix(path, prefix) {
+					covered = true
+					break
+				}
+			}
+			if !covered {
+				continue
+			}
+			if _, ok := specListed[path]; !ok {
+				errorsOut = append(errorsOut, source.SpecFile+" is missing endpoint documented in the OpenAPI method manifest: "+strings.ToUpper(method)+" "+path)
+			}
+		}
+	}
+	return errorsOut
 }
 
 func validateTraceability(root *os.Root) error {

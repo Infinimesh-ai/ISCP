@@ -49,10 +49,12 @@ type Server struct {
 	policy   policy.Engine
 	keys     *keyring.Ring
 	repo     *repository.TrustRepository
-	mu       sync.RWMutex
-	devices  map[string]deviceRecord
-	grants   map[string]trustcore.Grant
-	audit    []auditEntry
+	mu            sync.RWMutex
+	devices       map[string]deviceRecord
+	grants        map[string]trustcore.Grant
+	revokedGrants map[string]struct{}
+	revocationLog []revocationItem
+	audit         []auditEntry
 }
 
 type deviceRecord struct {
@@ -60,6 +62,46 @@ type deviceRecord struct {
 	Status              string                  `json:"status"`
 	DeviceRecordVersion uint64                  `json:"device_record_version"`
 	RevocationEpoch     uint64                  `json:"revocation_epoch"`
+}
+
+const (
+	TypeDeviceStatus = "iscp.trust.device_status.v2"
+	TypeGrantStatus  = "iscp.trust.grant_status.v2"
+	TypeRevocations  = "iscp.trust.revocations.v2"
+)
+
+// deviceStatusResponse is the normative device status read shape: the flat
+// record plus the canonical nested identity (spec/trust-root.md).
+type deviceStatusResponse struct {
+	Type                string                  `json:"type"`
+	Identity            identity.DeviceIdentity `json:"identity"`
+	DomainID            string                  `json:"domain_id"`
+	DeviceID            string                  `json:"device_id"`
+	Status              string                  `json:"status"`
+	PublicKey           identity.PublicKey      `json:"public_key"`
+	DeviceRecordVersion uint64                  `json:"device_record_version"`
+	RevocationEpoch     uint64                  `json:"revocation_epoch"`
+}
+
+type grantStatusResponse struct {
+	Type   string          `json:"type"`
+	Status string          `json:"status"`
+	Grant  json.RawMessage `json:"grant"`
+}
+
+type revocationItem struct {
+	RevocationID string    `json:"revocation_id"`
+	DomainID     string    `json:"domain_id"`
+	DeviceID     string    `json:"device_id,omitempty"`
+	GrantID      string    `json:"grant_id,omitempty"`
+	ReasonCode   string    `json:"reason_code"`
+	EffectiveAt  time.Time `json:"effective_at"`
+}
+
+type revocationsResponse struct {
+	Type       string           `json:"type"`
+	Items      []revocationItem `json:"items"`
+	NextCursor string           `json:"next_cursor,omitempty"`
 }
 
 type auditEntry struct {
@@ -100,9 +142,10 @@ func New(cfg Config) (*Server, error) {
 		replay:   replay.NewCache(),
 		policy:   policy.NewDefault(),
 		keys:     ring,
-		repo:     repo,
-		devices:  map[string]deviceRecord{},
-		grants:   map[string]trustcore.Grant{},
+		repo:          repo,
+		devices:       map[string]deviceRecord{},
+		grants:        map[string]trustcore.Grant{},
+		revokedGrants: map[string]struct{}{},
 	}
 	s.routes()
 	return s, nil
@@ -131,6 +174,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v2/trust/devices/status", s.deviceStatus)
 	s.mux.HandleFunc("/v2/trust/grants/verify", s.verifyGrant)
 	s.mux.HandleFunc("/v2/trust/grants/status", s.grantStatus)
+	s.mux.HandleFunc("/v2/trust/grants/revoke", s.revokeGrant)
 	s.mux.HandleFunc("/v2/trust/revocations", s.revocations)
 	s.mux.HandleFunc("/v2/trust/keys/rotate", s.rotateKeys)
 	s.mux.HandleFunc("/v2/trust/admin/audit", s.adminAudit)
@@ -146,7 +190,7 @@ func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) version(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": "0.1.0-dev", "protocol": "v2"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": "0.2.0-dev", "protocol": "v2"})
 }
 
 func (s *Server) wellKnown(w http.ResponseWriter, _ *http.Request) {
@@ -363,6 +407,14 @@ func (s *Server) verifyGrant(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "valid"})
 }
 
+// domainScopeMismatch reports whether an optional domain_id query parameter
+// was supplied and does not match this deployment. A mismatch must be
+// indistinguishable from not-found (no cross-domain existence probing).
+func (s *Server) domainScopeMismatch(r *http.Request) bool {
+	domainID := r.URL.Query().Get("domain_id")
+	return domainID != "" && domainID != s.cfg.DomainID
+}
+
 func (s *Server) deviceStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -381,11 +433,24 @@ func (s *Server) deviceStatus(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !ok {
+	if !ok || s.domainScopeMismatch(r) {
 		httpx.WriteError(w, http.StatusNotFound, iscperrors.New(iscperrors.CodeTrustInvalid, "device not found"))
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, rec)
+	// The public read must not echo submitted identity metadata
+	// (spec/trust-root.md: the nested identity MUST NOT include metadata).
+	publicIdentity := rec.Identity
+	publicIdentity.Metadata = nil
+	httpx.WriteJSON(w, http.StatusOK, deviceStatusResponse{
+		Type:                TypeDeviceStatus,
+		Identity:            publicIdentity,
+		DomainID:            rec.Identity.DomainID,
+		DeviceID:            rec.Identity.DeviceID,
+		Status:              rec.Status,
+		PublicKey:           rec.Identity.PublicKey,
+		DeviceRecordVersion: rec.DeviceRecordVersion,
+		RevocationEpoch:     rec.RevocationEpoch,
+	})
 }
 
 func (s *Server) grantStatus(w http.ResponseWriter, r *http.Request) {
@@ -396,6 +461,7 @@ func (s *Server) grantStatus(w http.ResponseWriter, r *http.Request) {
 	grantID := r.URL.Query().Get("grant_id")
 	s.mu.RLock()
 	grant, ok := s.grants[grantID]
+	_, revoked := s.revokedGrants[grantID]
 	s.mu.RUnlock()
 	if !ok && s.repo != nil {
 		dbGrant, err := s.repo.GetGrant(r.Context(), repository.DomainID(s.cfg.DomainID), grantID)
@@ -405,16 +471,92 @@ func (s *Server) grantStatus(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			ok = true
+			revoked = revoked || dbGrant.RevokedAt != nil
 		} else if err != pgx.ErrNoRows {
 			httpx.WriteError(w, http.StatusInternalServerError, err)
 			return
 		}
 	}
-	if !ok {
+	if !ok || s.domainScopeMismatch(r) {
 		httpx.WriteError(w, http.StatusNotFound, iscperrors.New(iscperrors.CodeTrustInvalid, "grant not found"))
 		return
 	}
-	httpx.WriteJSON(w, http.StatusOK, grant)
+	s.mu.RLock()
+	if rec, found := s.devices[grant.SubjectDeviceID]; found && rec.RevocationEpoch > grant.RevocationEpoch {
+		revoked = true
+	}
+	s.mu.RUnlock()
+	status := "active"
+	switch {
+	case revoked:
+		status = "revoked"
+	case !time.Now().UTC().Before(grant.ExpiresAt):
+		status = "expired"
+	}
+	raw, err := json.Marshal(grant)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, grantStatusResponse{Type: TypeGrantStatus, Status: status, Grant: raw})
+}
+
+func (s *Server) revokeGrant(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if !s.requireAdmin(w, r) {
+		return
+	}
+	var req struct {
+		GrantID string `json:"grant_id"`
+		Reason  string `json:"reason"`
+	}
+	if err := httpx.DecodeJSON(r, &req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	now := time.Now().UTC()
+	s.mu.Lock()
+	grant, ok := s.grants[req.GrantID]
+	s.mu.Unlock()
+	if !ok && s.repo == nil {
+		httpx.WriteError(w, http.StatusNotFound, iscperrors.New(iscperrors.CodeTrustInvalid, "grant not found"))
+		return
+	}
+	revocationID, err := postgres.NewUUIDv7Like(now)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	if s.repo != nil {
+		if err := s.repo.RevokeGrant(r.Context(), postgres.UUIDString(revocationID), repository.DomainID(s.cfg.DomainID), req.GrantID, req.Reason, now); err != nil {
+			if err == pgx.ErrNoRows {
+				httpx.WriteError(w, http.StatusNotFound, iscperrors.New(iscperrors.CodeTrustInvalid, "grant not found"))
+			} else {
+				httpx.WriteError(w, http.StatusInternalServerError, err)
+			}
+			return
+		}
+	}
+	s.mu.Lock()
+	s.revokedGrants[req.GrantID] = struct{}{}
+	s.revocationLog = append(s.revocationLog, revocationItem{
+		RevocationID: postgres.UUIDString(revocationID),
+		DomainID:     s.cfg.DomainID,
+		GrantID:      req.GrantID,
+		ReasonCode:   req.Reason,
+		EffectiveAt:  now,
+	})
+	s.audit = append(s.audit, auditEntry{EventType: "grant.revoke", SubjectID: req.GrantID, CreatedAt: now})
+	s.mu.Unlock()
+	raw, err := json.Marshal(grant)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, grantStatusResponse{Type: TypeGrantStatus, Status: "revoked", Grant: raw})
 }
 
 func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
@@ -434,6 +576,11 @@ func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := time.Now().UTC()
+	revocationID, err := postgres.NewUUIDv7Like(now)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, err)
+		return
+	}
 	s.mu.Lock()
 	rec := s.devices[req.DeviceID]
 	if rec.Identity.DeviceID == "" && s.repo == nil {
@@ -445,14 +592,16 @@ func (s *Server) revokeDevice(w http.ResponseWriter, r *http.Request) {
 	rec.DeviceRecordVersion++
 	rec.RevocationEpoch++
 	s.devices[req.DeviceID] = rec
+	s.revocationLog = append(s.revocationLog, revocationItem{
+		RevocationID: postgres.UUIDString(revocationID),
+		DomainID:     s.cfg.DomainID,
+		DeviceID:     req.DeviceID,
+		ReasonCode:   req.Reason,
+		EffectiveAt:  now,
+	})
 	s.audit = append(s.audit, auditEntry{EventType: "device.revoke", SubjectID: req.DeviceID, CreatedAt: now})
 	s.mu.Unlock()
 	if s.repo != nil {
-		revocationID, err := postgres.NewUUIDv7Like(now)
-		if err != nil {
-			httpx.WriteError(w, http.StatusInternalServerError, err)
-			return
-		}
 		if err := s.repo.RevokeDevice(r.Context(), postgres.UUIDString(revocationID), repository.DomainID(s.cfg.DomainID), req.DeviceID, req.Reason, now); err != nil {
 			httpx.WriteError(w, http.StatusInternalServerError, err)
 			return
@@ -470,15 +619,71 @@ func (s *Server) revocations(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if s.domainScopeMismatch(r) {
+		httpx.WriteJSON(w, http.StatusOK, revocationsResponse{Type: TypeRevocations, Items: []revocationItem{}})
+		return
+	}
+	limit := 100
+	if raw := r.URL.Query().Get("limit"); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 || parsed > 200 {
+			httpx.WriteError(w, http.StatusBadRequest, iscperrors.New(iscperrors.CodeTrustInvalid, "limit must be between 1 and 200"))
+			return
+		}
+		limit = parsed
+	}
+	cursor := r.URL.Query().Get("cursor")
+	if s.repo != nil {
+		records, err := s.repo.ListRevocations(r.Context(), repository.DomainID(s.cfg.DomainID), cursor, limit)
+		if err != nil {
+			httpx.WriteError(w, http.StatusInternalServerError, err)
+			return
+		}
+		items := make([]revocationItem, 0, len(records))
+		for _, rec := range records {
+			item := revocationItem{
+				RevocationID: rec.ID,
+				DomainID:     string(rec.DomainID),
+				ReasonCode:   rec.Reason,
+				EffectiveAt:  rec.CreatedAt,
+			}
+			if rec.SubjectType == "grant" {
+				item.GrantID = rec.SubjectID
+			} else {
+				item.DeviceID = rec.SubjectID
+			}
+			items = append(items, item)
+		}
+		resp := revocationsResponse{Type: TypeRevocations, Items: items}
+		if len(items) == limit {
+			resp.NextCursor = items[len(items)-1].RevocationID
+		}
+		httpx.WriteJSON(w, http.StatusOK, resp)
+		return
+	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	out := map[string]uint64{}
-	for id, rec := range s.devices {
-		if rec.RevocationEpoch > 0 {
-			out[id] = rec.RevocationEpoch
+	start := 0
+	if cursor != "" {
+		for i, item := range s.revocationLog {
+			if item.RevocationID == cursor {
+				start = i + 1
+				break
+			}
 		}
 	}
-	httpx.WriteJSON(w, http.StatusOK, out)
+	items := []revocationItem{}
+	for _, item := range s.revocationLog[start:] {
+		if len(items) == limit {
+			break
+		}
+		items = append(items, item)
+	}
+	resp := revocationsResponse{Type: TypeRevocations, Items: items}
+	if len(items) == limit && start+len(items) < len(s.revocationLog) {
+		resp.NextCursor = items[len(items)-1].RevocationID
+	}
+	httpx.WriteJSON(w, http.StatusOK, resp)
 }
 
 func (s *Server) rotateKeys(w http.ResponseWriter, r *http.Request) {

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/session.close.v1.json",
+  "title": "ISCP Session Close v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "session_id", "domain_id", "device_id", "peer_device_id", "relay_id", "reason", "issued_at", "expires_at", "nonce", "signature"],
+  "properties": {
+    "type": { "const": "iscp.session.close.v1" },
+    "session_id": { "type": "string", "minLength": 1 },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "device_id": { "type": "string", "minLength": 1 },
+    "peer_device_id": { "type": "string", "minLength": 1 },
+    "relay_id": { "type": "string", "minLength": 1 },
+    "reason": { "enum": ["shutdown", "superseded", "revoked", "error"] },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "nonce": { "type": "string", "minLength": 16 },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["alg", "kid", "value"],
+      "properties": {
+        "alg": { "const": "Ed25519" },
+        "kid": { "type": "string" },
+        "value": { "type": "string", "contentEncoding": "base64url" }
+      }
+    }
+  }
+}
