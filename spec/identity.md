@@ -16,4 +16,11 @@ Proof verification MUST reject:
 - Nonce replay.
 - Signature mismatch.
 - Unknown top-level fields.
+- An identity `kid` that is not the thumbprint of the submitted public key.
+- A proof signature `kid` that does not match the identity `kid`.
+
+Verifiers that authenticate against previously stored device state MUST verify
+the proof against the stored public key for the device, not against key
+material submitted in the request. Comparing a submitted `kid` against a stored
+thumbprint is not a substitute for verifying against the stored key.
 

@@ -16,6 +16,7 @@ import (
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/envelope"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/payload"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/provisioning"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/session"
 )
 
@@ -247,7 +248,12 @@ func bindDeviceForTest(t *testing.T, handler http.Handler, p crypto.Provider, de
 		Access  credential `json:"access"`
 		Refresh credential `json:"refresh"`
 	}
-	postJSON(t, handler, "/v2/relay/devices/bind-self", bindSelfRequest{Identity: device.Identity, Proof: proof}, http.StatusOK, &bindResp)
+	// Production bind-self requires an actor authorization; the reference
+	// stands that in with the admin token. Non-production servers in these
+	// tests run without an admin token and ignore the header.
+	postJSONWithHeaders(t, handler, "/v2/relay/devices/bind-self", map[string]string{
+		"X-ISCP-Admin-Token": "admin-test-token",
+	}, bindSelfRequest{Identity: device.Identity, Proof: proof}, http.StatusOK, &bindResp)
 	if bindResp.Access.Token == "" {
 		t.Fatal("expected issued access credential")
 	}
@@ -301,4 +307,121 @@ func accessProofHeaderValue(t *testing.T, p crypto.Provider, device identity.Dev
 		t.Fatal(err)
 	}
 	return crypto.Base64URL(raw)
+}
+
+func TestRegisterWithSignedTicketV3(t *testing.T) {
+	p := crypto.NewProvider()
+	now := time.Now().UTC()
+	trustSigner, err := identity.NewDevice(p, "domain-a", "trust-a-signer", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv, err := New(Config{
+		DomainID:     "domain-a",
+		RelayID:      "relay-a",
+		BaseURL:      "http://relay.test",
+		WebSocketURL: "ws://relay.test/v2/relay/connect",
+		TicketIssuer: &trustSigner.Identity,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := srv.Handler()
+	controller, err := identity.NewDevice(p, "domain-a", "phone-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agent, err := identity.NewDevice(p, "domain-a", "agent-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ticket, err := provisioning.SignTicketV3(p, trustSigner, provisioning.PairingTicketV3{
+		TicketID:         "ticket-v3-1",
+		DomainID:         "domain-a",
+		RelayID:          "relay-a",
+		TrustRootID:      "trust-a",
+		Purpose:          provisioning.PurposeInvite,
+		ConsumerRole:     "service_agent",
+		GrantAudience:    controller.Identity.DeviceID,
+		GrantPermissions: []string{"text"},
+		MaxUses:          1,
+		IssuedAt:         now.Add(-time.Minute),
+		ExpiresAt:        now.Add(10 * time.Minute),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Proof challenge must be the ticket id.
+	badProof, err := agent.CreateProof(p, "relay-a", "self-reported", "nonce-v3-bad", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postJSON(t, handler, "/v2/relay/devices/register-with-ticket", registerTicketRequest{
+		Ticket: &ticket, Identity: agent.Identity, Proof: badProof,
+	}, http.StatusUnauthorized, nil)
+
+	// Audience reversal: the inviting controller consumes its own ticket.
+	controllerProof, err := controller.CreateProof(p, "relay-a", ticket.TicketID, "nonce-v3-ctl", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postJSON(t, handler, "/v2/relay/devices/register-with-ticket", registerTicketRequest{
+		Ticket: &ticket, Identity: controller.Identity, Proof: controllerProof,
+	}, http.StatusForbidden, nil)
+
+	// Correct consumption by the invited agent.
+	proof, err := agent.CreateProof(p, "relay-a", ticket.TicketID, "nonce-v3-ok", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var resp struct {
+		Access credential `json:"access"`
+	}
+	postJSON(t, handler, "/v2/relay/devices/register-with-ticket", registerTicketRequest{
+		Ticket: &ticket, Identity: agent.Identity, Proof: proof,
+	}, http.StatusOK, &resp)
+	if resp.Access.Token == "" {
+		t.Fatal("expected issued access credential")
+	}
+
+	// Single-use ticket cannot be consumed twice.
+	proof2, err := agent.CreateProof(p, "relay-a", ticket.TicketID, "nonce-v3-again", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postJSON(t, handler, "/v2/relay/devices/register-with-ticket", registerTicketRequest{
+		Ticket: &ticket, Identity: agent.Identity, Proof: proof2,
+	}, http.StatusConflict, nil)
+}
+
+func TestProductionRegistrationRequiresSignedTicket(t *testing.T) {
+	srv, err := New(Config{
+		DomainID:       "domain-a",
+		RelayID:        "relay-a",
+		BaseURL:        "http://relay.test",
+		WebSocketURL:   "ws://relay.test/v2/relay/connect",
+		ProfileGate:    config.DefaultGate(config.ProfileProduction),
+		AdminToken:     "admin-test-token",
+		AllowedOrigins: []string{"http://relay.test"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := srv.Handler()
+	p := crypto.NewProvider()
+	now := time.Now().UTC()
+	device, err := identity.NewDevice(p, "domain-a", "device-legacy", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := device.CreateProof(p, "relay-a", "challenge-legacy", "nonce-legacy", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	postJSON(t, handler, "/v2/relay/devices/register-with-ticket", registerTicketRequest{
+		TicketID: "legacy-1", MaxUses: 1, Identity: device.Identity, Proof: proof,
+	}, http.StatusBadRequest, nil)
+	// Production bind-self without the actor authorization fails.
+	postJSON(t, handler, "/v2/relay/devices/bind-self", bindSelfRequest{Identity: device.Identity, Proof: proof}, http.StatusUnauthorized, nil)
 }

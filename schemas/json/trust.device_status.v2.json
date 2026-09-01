@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.iscp.dev/json/trust.device_status.v2.json",
+  "title": "ISCP Trust Device Status v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["type", "identity", "domain_id", "device_id", "status", "public_key", "device_record_version", "revocation_epoch"],
+  "properties": {
+    "type": { "const": "iscp.trust.device_status.v2" },
+    "identity": { "$ref": "https://schemas.iscp.dev/json/device.identity.v2.json" },
+    "domain_id": { "type": "string", "minLength": 1 },
+    "device_id": { "type": "string", "minLength": 1 },
+    "status": { "type": "string", "minLength": 1 },
+    "public_key": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kty", "use", "kid", "public"],
+      "properties": {
+        "kty": { "const": "Ed25519" },
+        "use": { "const": "identity-signature" },
+        "kid": { "type": "string", "minLength": 1 },
+        "public": { "type": "string", "contentEncoding": "base64url" }
+      }
+    },
+    "relay_state": { "type": "string" },
+    "device_record_version": { "type": "integer", "minimum": 0 },
+    "revocation_epoch": { "type": "integer", "minimum": 0 }
+  }
+}

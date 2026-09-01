@@ -25,12 +25,19 @@ ISCP implements the protocol v2 object model.
 | Relay Descriptor | `iscp.relay.descriptor.v2` | Yes via wrapper | Descriptor object | Relay discovery and key usage. |
 | Trust Root Descriptor | `iscp.trust_root.descriptor.v2` | Yes via wrapper | Descriptor object | Trust Root discovery and key state. |
 | Trust Grant | `iscp.trust_grant.v2` | Yes | Object without `signature` | Authorization from Trust Root only. |
-| Pairing Ticket | `iscp.pairing_ticket.v2` | Yes | Object without `signature` | Short TTL, limited use. |
+| Pairing Ticket | `iscp.pairing_ticket.v2` | Yes | Object without `signature` | Short TTL, limited use. Deprecated in favor of v3. |
+| Pairing Ticket v3 | `iscp.pairing_ticket.v3` | Yes | Object without `signature` | Adds purpose, consumer role, and grant constraints. |
 | Provisioning Bundle | `iscp.provisioning.bundle.v2` | Yes | Object without `signature` | Bound to device ID and public key thumbprint. |
 | Session Hello | `iscp.session.hello.v2` | Yes | Object without `signature` | Ephemeral X25519 public key and transcript data. |
 | Session Ready | `iscp.session.ready.v2` | Yes | Object without `signature` | Key confirmation MAC. |
 | Secure Envelope | `iscp.secure_envelope.v2` | No | AAD route metadata + ciphertext | Payload is AEAD encrypted. |
 | Delivery Receipt | `iscp.delivery_receipt.v2` | Optional | Object without `signature` | Relay receipt is not an E2E receipt. |
+| Session Reopen | `iscp.session.reopen.v1` | Yes | Object without `signature` | Responder-initiated handshake request; envelope-shaped transport. |
+| Session Close | `iscp.session.close.v1` | Yes | Object without `signature` | Optional deliberate session teardown. |
+| Device Status | `iscp.trust.device_status.v2` | No | — | Trust read response; typed, self-describing. |
+| Grant Status | `iscp.trust.grant_status.v2` | No | — | Trust read response envelope. |
+| Revocations | `iscp.trust.revocations.v2` | No | — | Paginated device and grant revocation feed. |
+| Wrapped Recovery Credentials | `iscp.relay.credential_recovery.wrapped.v2` | No | — | Sealed credential delivery for recovery. |
 
 ## Signature Contexts
 

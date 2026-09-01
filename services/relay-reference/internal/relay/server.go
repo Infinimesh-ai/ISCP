@@ -22,6 +22,7 @@ import (
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/descriptor"
 	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/provisioning"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/httpx"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/postgres"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/queue"
@@ -39,6 +40,10 @@ type Config struct {
 	DB             *pgxpool.Pool
 	AdminToken     string
 	AllowedOrigins []string
+	// TicketIssuer is the Trust Root signer identity used to verify
+	// iscp.pairing_ticket.v3 signatures on register-with-ticket. Production
+	// profile refuses ticketed registration without it.
+	TicketIssuer *identity.DeviceIdentity
 }
 
 const accessProofHeader = "X-ISCP-Access-Proof"
@@ -172,7 +177,7 @@ func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 }
 
 func (s *Server) version(w http.ResponseWriter, _ *http.Request) {
-	httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": "0.1.0-dev", "protocol": "v2"})
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"version": "0.2.0-dev", "protocol": "v2"})
 }
 
 func (s *Server) wellKnown(w http.ResponseWriter, _ *http.Request) {
@@ -216,6 +221,12 @@ func (s *Server) bindSelf(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
+	// Bootstrap is actor-authorized (spec/provisioning.md). The reference
+	// stands in the external actor assertion with the operator admin token.
+	if s.cfg.ProfileGate.Profile == config.ProfileProduction && !s.adminAuthorized(r) {
+		httpx.WriteError(w, http.StatusUnauthorized, iscperrors.New(iscperrors.CodeAccessInvalid, "production bind-self requires an actor authorization"))
+		return
+	}
 	if err := s.verifyProof(r.Context(), req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
@@ -224,10 +235,11 @@ func (s *Server) bindSelf(w http.ResponseWriter, r *http.Request) {
 }
 
 type registerTicketRequest struct {
-	TicketID string                  `json:"ticket_id"`
-	MaxUses  int                     `json:"max_uses"`
-	Identity identity.DeviceIdentity `json:"identity"`
-	Proof    identity.DeviceProof    `json:"proof"`
+	TicketID string                        `json:"ticket_id,omitempty"`
+	MaxUses  int                           `json:"max_uses,omitempty"`
+	Ticket   *provisioning.PairingTicketV3 `json:"ticket,omitempty"`
+	Identity identity.DeviceIdentity       `json:"identity"`
+	Proof    identity.DeviceProof          `json:"proof"`
 }
 
 func (s *Server) registerWithTicket(w http.ResponseWriter, r *http.Request) {
@@ -240,24 +252,76 @@ func (s *Server) registerWithTicket(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, err)
 		return
 	}
+	if req.Ticket != nil {
+		s.registerWithSignedTicket(w, r, req)
+		return
+	}
+	// Legacy ticket_id-only registration never verified a ticket signature
+	// and is a local-lab behavior.
+	if s.cfg.ProfileGate.Profile == config.ProfileProduction {
+		httpx.WriteError(w, http.StatusBadRequest, iscperrors.New(iscperrors.CodeProvisionInvalid, "production registration requires a signed pairing ticket"))
+		return
+	}
 	if err := s.verifyProof(r.Context(), req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
 	}
-	s.mu.Lock()
-	state := s.tickets[req.TicketID]
-	if state.MaxUses == 0 {
-		state.MaxUses = req.MaxUses
-	}
-	if state.MaxUses <= 0 || state.Uses >= state.MaxUses {
-		s.mu.Unlock()
-		httpx.WriteError(w, http.StatusConflict, iscperrors.New(iscperrors.CodeProvisionInvalid, "pairing ticket already consumed"))
+	if err := s.consumeTicket(req.TicketID, req.MaxUses); err != nil {
+		httpx.WriteError(w, http.StatusConflict, err)
 		return
 	}
-	state.Uses++
-	s.tickets[req.TicketID] = state
-	s.mu.Unlock()
 	s.bindIdentity(w, r, req.Identity)
+}
+
+func (s *Server) registerWithSignedTicket(w http.ResponseWriter, r *http.Request, req registerTicketRequest) {
+	if s.cfg.TicketIssuer == nil {
+		httpx.WriteError(w, http.StatusServiceUnavailable, iscperrors.New(iscperrors.CodeConfigInvalid, "relay has no configured ticket issuer"))
+		return
+	}
+	ticket := *req.Ticket
+	now := time.Now().UTC()
+	if err := provisioning.VerifyTicketV3(s.provider, ticket, *s.cfg.TicketIssuer, now); err != nil {
+		httpx.WriteError(w, http.StatusForbidden, err)
+		return
+	}
+	if ticket.DomainID != s.cfg.DomainID || ticket.RelayID != s.cfg.RelayID {
+		httpx.WriteError(w, http.StatusForbidden, iscperrors.New(iscperrors.CodeProvisionInvalid, "pairing ticket is not bound to this relay"))
+		return
+	}
+	// The proof challenge is the ticket ID, binding possession to this exact
+	// consumption; self-reported challenges are rejected.
+	if req.Proof.Challenge != ticket.TicketID {
+		httpx.WriteError(w, http.StatusUnauthorized, iscperrors.New(iscperrors.CodeProvisionInvalid, "proof challenge must be the ticket id"))
+		return
+	}
+	if err := s.verifyProof(r.Context(), req.Identity, req.Proof, s.cfg.RelayID, ticket.TicketID, 5*time.Minute); err != nil {
+		httpx.WriteError(w, http.StatusUnauthorized, err)
+		return
+	}
+	if _, err := provisioning.BindGrantRoles(ticket, req.Identity); err != nil {
+		httpx.WriteError(w, http.StatusForbidden, err)
+		return
+	}
+	if err := s.consumeTicket(ticket.TicketID, ticket.MaxUses); err != nil {
+		httpx.WriteError(w, http.StatusConflict, err)
+		return
+	}
+	s.bindIdentity(w, r, req.Identity)
+}
+
+func (s *Server) consumeTicket(ticketID string, maxUses int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state := s.tickets[ticketID]
+	if state.MaxUses == 0 {
+		state.MaxUses = maxUses
+	}
+	if state.MaxUses <= 0 || state.Uses >= state.MaxUses {
+		return iscperrors.New(iscperrors.CodeProvisionInvalid, "pairing ticket already consumed")
+	}
+	state.Uses++
+	s.tickets[ticketID] = state
+	return nil
 }
 
 func (s *Server) refreshAccess(w http.ResponseWriter, r *http.Request) {
