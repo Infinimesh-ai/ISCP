@@ -49,6 +49,9 @@ endpoints gain normative typed responses.
 
 ### Reference services
 
+- Relay: index queued delivery receipts by domain and message so each delivery
+  does not scan retained receipt history. Forward-only migration `0002` preserves
+  existing records and signed bytes.
 - Relay: register-with-ticket verifies the full signed v3 ticket (signature,
   window, relay binding, challenge == ticket_id, role invariants); production
   requires it and gates bind-self behind the operator actor authorization.

@@ -17,6 +17,31 @@ jobs:
       - run: go test ./...
       - run: go vet ./...
 
+  postgres-migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_DB: iscp
+          POSTGRES_USER: iscp
+          POSTGRES_PASSWORD: iscp-test-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U iscp -d iscp"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.25.x"
+      - run: go test -count=1 -v ./pkg/server/postgres/...
+        env:
+          ISCP_POSTGRES_TEST_DSN: postgres://iscp:iscp-test-password@127.0.0.1:5432/iscp?sslmode=disable
+
   release-gate:
     runs-on: ubuntu-latest
     steps:

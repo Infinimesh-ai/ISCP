@@ -1,6 +1,8 @@
 package postgres
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -15,6 +17,22 @@ func TestEmbeddedMigrations(t *testing.T) {
 	}
 	if migrations[0].Name != "0001_init.sql" {
 		t.Fatalf("unexpected first migration %s", migrations[0].Name)
+	}
+	deployed, err := filepath.Glob("../../../deploy/migrations/postgres/*.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deployed) != len(migrations) {
+		t.Fatalf("deployment has %d migrations, embedded service has %d", len(deployed), len(migrations))
+	}
+	for i, migration := range migrations {
+		data, err := os.ReadFile(deployed[i])
+		if err != nil {
+			t.Fatal(err)
+		}
+		if filepath.Base(deployed[i]) != migration.Name || string(data) != migration.SQL {
+			t.Fatalf("deployment and embedded migration differ: %s", migration.Name)
+		}
 	}
 }
 

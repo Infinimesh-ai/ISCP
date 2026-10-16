@@ -21,6 +21,14 @@ Migrations are designed to be idempotent for empty ISCP environments.
 The Relay and Trust Root reference services also apply the embedded migrations
 on startup when `ISCP_DATABASE_URL` is configured.
 
+Migration `0002_queued_receipt_index.sql` adds a partial index on
+`delivery_receipts (domain_id, message_id) WHERE status = 'queued'`.
+`MarkMessageDelivered` runs this lookup for every delivered message; without the
+index, a large retained receipt history can cause a full ledger scan per message.
+The index preserves all rows, statuses and raw/canonical signed bytes. Existing
+databases are upgraded by the same idempotent startup path. See the
+[upgrade procedure](upgrade.md#queued-receipt-index-0002) for large live databases.
+
 Docker Compose sets:
 
 ```text
@@ -29,6 +37,22 @@ ISCP_DATABASE_URL=postgres://iscp:iscp-local-password@postgres:5432/iscp?sslmode
 
 If `ISCP_DATABASE_URL` is not set, services run in in-memory development mode.
 Release validation must use the PostgreSQL-backed Compose path.
+
+### Migration regression tests
+
+Use a disposable PostgreSQL 18 server and a role with `CREATEDB`:
+
+```bash
+ISCP_POSTGRES_TEST_DSN='postgres://iscp:iscp-test-password@127.0.0.1:5432/iscp?sslmode=disable' \
+  go test -count=1 -v ./pkg/server/postgres/...
+```
+
+The tests create and remove their own uniquely named databases. They do not use
+`ISCP_DATABASE_URL`. CI runs fresh initialization, repeated startup migrations,
+concurrent index preparation, and an upgrade with one million retained receipts.
+The regression checks query plans instead of machine-dependent latency thresholds,
+then verifies domain/status isolation and preservation of the complete ledger and
+raw/canonical bytes through the actual repository delivery method.
 
 ## Storage Rules
 
