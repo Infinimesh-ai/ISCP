@@ -5,6 +5,8 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
@@ -20,9 +22,11 @@ import (
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/config"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/descriptor"
+	"github.com/Infinimesh-ai/ISCP/pkg/iscp/duplex"
 	iscperrors "github.com/Infinimesh-ai/ISCP/pkg/iscp/errors"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/provisioning"
+	"github.com/Infinimesh-ai/ISCP/pkg/server/authority"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/httpx"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/postgres"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/queue"
@@ -31,7 +35,19 @@ import (
 	"github.com/Infinimesh-ai/ISCP/pkg/server/repository"
 )
 
+const (
+	TransportLegacy   = "legacy"
+	TransportDuplexV1 = "duplex-v1"
+)
+
+// Config selects one Relay transport. Duplex requires explicit database history
+// activation; selecting a mode never adopts or rewrites existing history.
 type Config struct {
+	Transport string
+	// Signer is an externally managed, stable Relay identity. It is mutually
+	// exclusive with SignerFile. Duplex requires one of these durable identities.
+	Signer         *identity.Device
+	SignerFile     string
 	DomainID       string
 	RelayID        string
 	BaseURL        string
@@ -40,6 +56,7 @@ type Config struct {
 	DB             *pgxpool.Pool
 	AdminToken     string
 	AllowedOrigins []string
+	Managed        ManagedAdapter
 	// TicketIssuer is the Trust Root signer identity used to verify
 	// iscp.pairing_ticket.v3 signatures on register-with-ticket. Production
 	// profile refuses ticketed registration without it.
@@ -49,24 +66,49 @@ type Config struct {
 const accessProofHeader = "X-ISCP-Access-Proof"
 const relayMaxQueuedBytes = 1 << 20
 
+// ManagedAdapter is the deployment-owned transaction plane. It adds no public
+// request fields to the reference registration interface.
+type ManagedAdapter interface {
+	Register(context.Context, identity.DeviceIdentity, identity.DeviceProof, provisioning.PairingTicketV3) (json.RawMessage, error)
+	Refresh(*http.Request) (json.RawMessage, error)
+	Metadata() map[string]string
+}
+
+// ManagedRegistrationDiscloser holds current authority through the actual
+// registration response write, including flushing buffered HTTP data.
+type ManagedRegistrationDiscloser interface {
+	DiscloseRegistration(context.Context, identity.DeviceIdentity, func() error) error
+}
+
 type Server struct {
-	cfg         Config
-	provider    crypto.Provider
-	signer      identity.Device
-	mux         *http.ServeMux
-	limiter     *ratelimit.Limiter
-	replay      *replay.Cache
-	queue       *queue.Queue
-	repo        *repository.RelayRepository
-	upgrader    websocket.Upgrader
-	mu          sync.RWMutex
-	devices     map[string]identity.DeviceIdentity
-	access      map[string]credential
-	refresh     map[string]credential
-	revoked     map[string]struct{}
-	tickets     map[string]ticketState
-	connections map[string]connectionState
-	startedAt   time.Time
+	// deliveryIdle overrides the duplex idle delivery tick (tests only).
+	deliveryIdle      time.Duration
+	duplexMu          sync.Mutex
+	duplexOwners      map[string]*duplexConnection
+	duplexAll         map[*duplexConnection]struct{}
+	duplexClosed      bool
+	duplexWG          sync.WaitGroup
+	maintenanceCancel context.CancelFunc
+	payloadCleanup    payloadCleanupMetrics
+	admissionCommit   func(context.Context, pgx.Tx) error
+	cfg               Config
+	provider          crypto.Provider
+	signer            identity.Device
+	writerEpoch       string
+	limiter           *ratelimit.Limiter
+	mux               *http.ServeMux
+	replay            *replay.Cache
+	queue             *queue.Queue
+	repo              *repository.RelayRepository
+	upgrader          websocket.Upgrader
+	mu                sync.RWMutex
+	devices           map[string]identity.DeviceIdentity
+	access            map[string]credential
+	refresh           map[string]credential
+	revoked           map[string]struct{}
+	tickets           map[string]ticketState
+	connections       map[string]connectionState
+	startedAt         time.Time
 }
 
 type credential struct {
@@ -94,9 +136,24 @@ type connectionState struct {
 }
 
 func New(cfg Config) (*Server, error) {
+	if cfg.Transport == "" {
+		cfg.Transport = TransportLegacy
+	}
+	if cfg.Transport != TransportLegacy && cfg.Transport != TransportDuplexV1 {
+		return nil, errors.New("unsupported Relay transport")
+	}
+	if cfg.Transport == TransportDuplexV1 && cfg.DB == nil {
+		return nil, errors.New("duplex transport requires PostgreSQL and explicitly activated history")
+	}
+	if cfg.Signer != nil && cfg.SignerFile != "" {
+		return nil, errors.New("configure either Relay signer or signer file")
+	}
+	if cfg.Transport == TransportDuplexV1 && cfg.Signer == nil && cfg.SignerFile == "" {
+		return nil, errors.New("duplex requires a stable Relay signer")
+	}
 	provider := crypto.NewProvider()
 	now := time.Now().UTC()
-	signer, err := identity.NewDevice(provider, cfg.DomainID, cfg.RelayID+"-signer", now)
+	signer, err := configuredSigner(provider, cfg, now)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +174,25 @@ func New(cfg Config) (*Server, error) {
 		r := repository.NewRelayRepository(cfg.DB)
 		repo = &r
 	}
+	var writerEpoch string
+	if cfg.Transport == TransportDuplexV1 {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		tx, err := cfg.DB.Begin(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer tx.Rollback(context.Background())
+		writerEpoch, err = authority.ReadEpoch(ctx, tx, cfg.RelayID)
+		if err != nil {
+			return nil, errors.New("duplex authority is not explicitly activated")
+		}
+		if _, err = authority.Lock(ctx, tx, authority.Request{ScopeID: cfg.RelayID, DomainID: cfg.DomainID, ExpectedWriterEpoch: writerEpoch, RequireContinuousHistory: true}); err != nil {
+			return nil, errors.New("duplex history or writer authority is unavailable")
+		}
+	}
 	s := &Server{
+		writerEpoch: writerEpoch,
 		cfg:         cfg,
 		provider:    provider,
 		signer:      signer,
@@ -136,6 +211,7 @@ func New(cfg Config) (*Server, error) {
 		startedAt:   now,
 	}
 	s.routes()
+	s.startDuplexCleanup()
 	return s, nil
 }
 
@@ -160,8 +236,14 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("/v2/relay/devices/register-with-ticket", s.registerWithTicket)
 	s.mux.HandleFunc("/v2/relay/devices/refresh-access", s.refreshAccess)
 	s.mux.HandleFunc("/v2/relay/devices/revoke-access", s.revokeAccess)
-	s.mux.HandleFunc("/v2/relay/envelopes", s.envelopes)
-	s.mux.HandleFunc("/v2/relay/connect", s.connect)
+	if s.cfg.Transport == TransportDuplexV1 {
+		s.mux.HandleFunc("/v2/relay/envelopes", s.retiredTransport)
+		s.mux.HandleFunc("/v2/relay/connect", s.retiredTransport)
+		s.mux.HandleFunc("/v2/relay/duplex", s.duplexConnect)
+	} else {
+		s.mux.HandleFunc("/v2/relay/envelopes", s.envelopes)
+		s.mux.HandleFunc("/v2/relay/connect", s.connect)
+	}
 	s.mux.HandleFunc("/v2/relay/admin/devices", s.adminDevices)
 	s.mux.HandleFunc("/v2/relay/admin/connections", s.adminConnections)
 	s.mux.HandleFunc("/v2/relay/admin/messages", s.adminMessages)
@@ -174,6 +256,7 @@ func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) metrics(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; version=0.0.4")
 	_, _ = w.Write([]byte("# HELP iscp_relay_up Relay process status\n# TYPE iscp_relay_up gauge\niscp_relay_up 1\n"))
+	s.payloadCleanup.write(w)
 }
 
 func (s *Server) version(w http.ResponseWriter, _ *http.Request) {
@@ -196,6 +279,18 @@ func (s *Server) wellKnown(w http.ResponseWriter, _ *http.Request) {
 		}},
 		IssuedAt:  now,
 		ExpiresAt: now.Add(24 * time.Hour),
+	}
+	if s.cfg.Managed != nil {
+		relayDesc.Metadata = maps.Clone(s.cfg.Managed.Metadata())
+	}
+	if s.cfg.Transport == TransportDuplexV1 {
+		if relayDesc.Metadata == nil {
+			relayDesc.Metadata = map[string]string{}
+		}
+		relayDesc.WebSocketURL = strings.TrimRight(strings.Replace(strings.Replace(s.cfg.BaseURL, "https://", "wss://", 1), "http://", "ws://", 1), "/") + duplex.Path
+		relayDesc.Metadata["duplex_protocol"] = duplex.Protocol
+		relayDesc.Metadata["duplex_path"] = duplex.Path
+		relayDesc.Metadata["duplex_limits_sha256"], _ = duplex.Digest(duplex.DefaultLimits())
 	}
 	signed, err := descriptor.Sign(s.provider, s.signer, relayDesc.Type, relayDesc, now)
 	if err != nil {
@@ -230,6 +325,14 @@ func (s *Server) bindSelf(w http.ResponseWriter, r *http.Request) {
 	if err := s.verifyProof(r.Context(), req.Identity, req.Proof, s.cfg.RelayID, req.Proof.Challenge, 5*time.Minute); err != nil {
 		httpx.WriteError(w, http.StatusUnauthorized, err)
 		return
+	}
+	if binder, ok := s.cfg.Managed.(interface {
+		OperatorBind(context.Context, identity.DeviceIdentity) error
+	}); ok {
+		if err := binder.OperatorBind(r.Context(), req.Identity); err != nil {
+			httpx.WriteError(w, managedStatus(err), err)
+			return
+		}
 	}
 	s.bindIdentity(w, r, req.Identity)
 }
@@ -274,6 +377,34 @@ func (s *Server) registerWithTicket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) registerWithSignedTicket(w http.ResponseWriter, r *http.Request, req registerTicketRequest) {
+	if s.cfg.Managed != nil {
+		raw, err := s.cfg.Managed.Register(r.Context(), req.Identity, req.Proof, *req.Ticket)
+		if err != nil {
+			httpx.WriteError(w, managedStatus(err), err)
+			return
+		}
+		write := func() error {
+			controller := http.NewResponseController(w)
+			if err := controller.SetWriteDeadline(time.Now().Add(5 * time.Second)); err != nil && !errors.Is(err, http.ErrNotSupported) {
+				return err
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.Header().Set("Cache-Control", "no-store")
+			if _, err := w.Write(raw); err != nil {
+				return err
+			}
+			return controller.Flush()
+		}
+		if guard, ok := s.cfg.Managed.(ManagedRegistrationDiscloser); ok {
+			if err := guard.DiscloseRegistration(r.Context(), req.Identity, write); err != nil {
+				httpx.WriteError(w, managedStatus(err), err)
+			}
+		} else if err := write(); err != nil {
+			return
+		}
+
+		return
+	}
 	if s.cfg.TicketIssuer == nil {
 		httpx.WriteError(w, http.StatusServiceUnavailable, iscperrors.New(iscperrors.CodeConfigInvalid, "relay has no configured ticket issuer"))
 		return
@@ -325,6 +456,18 @@ func (s *Server) consumeTicket(ticketID string, maxUses int) error {
 }
 
 func (s *Server) refreshAccess(w http.ResponseWriter, r *http.Request) {
+	if s.cfg.Managed != nil {
+		raw, err := s.cfg.Managed.Refresh(r)
+		if err != nil {
+			httpx.WriteError(w, managedStatus(err), err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		_, _ = w.Write(raw) // #nosec G705 -- Adapter JSON is served as application/json with nosniff, never as HTML.
+		return
+	}
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
@@ -334,6 +477,9 @@ func (s *Server) refreshAccess(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := httpx.DecodeJSON(r, &req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err)
+		return
+	}
+	if s.refreshDuplexCredentials(w, r, req.Refresh) {
 		return
 	}
 	hash := string(crypto.SHA256([]byte(req.Refresh)))
@@ -391,8 +537,13 @@ func (s *Server) revokeAccess(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusForbidden, iscperrors.New(iscperrors.CodeAccessInvalid, "access credential cannot revoke another device"))
 		return
 	}
+	if s.repo != nil {
+		if err := s.revokePersistentDevice(r.Context(), req.DeviceID, bearerToken(r), s.adminAuthorized(r)); err != nil {
+			httpx.WriteError(w, http.StatusServiceUnavailable, err)
+			return
+		}
+	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.revoked[req.DeviceID] = struct{}{}
 	for k, cred := range s.access {
 		if cred.DeviceID == req.DeviceID {
@@ -406,16 +557,13 @@ func (s *Server) revokeAccess(w http.ResponseWriter, r *http.Request) {
 			s.refresh[k] = cred
 		}
 	}
-	if s.repo != nil {
-		now := time.Now().UTC()
-		if err := s.repo.RevokeDevice(r.Context(), repository.DomainID(s.cfg.DomainID), req.DeviceID, now); err != nil {
-			httpx.WriteError(w, http.StatusInternalServerError, err)
-			return
-		}
-		if err := s.repo.RevokeDeviceCredentials(r.Context(), repository.DomainID(s.cfg.DomainID), req.DeviceID, now); err != nil {
-			httpx.WriteError(w, http.StatusInternalServerError, err)
-			return
-		}
+	s.mu.Unlock()
+	s.duplexMu.Lock()
+	owner := s.duplexOwners[receiveKey(s.cfg.DomainID, req.DeviceID)]
+	s.duplexMu.Unlock()
+	if owner != nil {
+		owner.cancel()
+		_ = owner.ws.Close()
 	}
 	httpx.WriteJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
@@ -660,30 +808,6 @@ func (s *Server) adminMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, s.queue.SnapshotMetadata(now))
-}
-
-func (s *Server) dequeueMessages(ctx context.Context, domainID, recipientDeviceID string, now time.Time, limit int) ([]queue.Message, error) {
-	if s.repo == nil {
-		return s.queue.DequeueFor(domainID, recipientDeviceID, now, limit), nil
-	}
-	claimed, err := s.repo.ClaimPendingMessagesFor(ctx, repository.DomainID(domainID), recipientDeviceID, now, time.Minute, limit)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]queue.Message, 0, len(claimed))
-	for _, msg := range claimed {
-		out = append(out, queue.Message{
-			DomainID:          string(msg.DomainID),
-			MessageID:         msg.MessageID,
-			SenderDeviceID:    msg.SenderDeviceID,
-			RecipientDeviceID: msg.RecipientDeviceID,
-			Envelope:          msg.EnvelopeRaw,
-			Priority:          msg.Priority,
-			QueuedAt:          msg.QueuedAt,
-			ExpiresAt:         msg.ExpiresAt,
-		})
-	}
-	return out, nil
 }
 
 func relayMessageMetadata(messages []repository.RelayMessage) []queue.MessageMetadata {
@@ -955,23 +1079,6 @@ func bearerToken(r *http.Request) string {
 	return strings.TrimSpace(value[len(prefix):])
 }
 
-func clientKey(r *http.Request) string {
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
-		if idx := strings.IndexByte(forwarded, ','); idx >= 0 {
-			return strings.TrimSpace(forwarded[:idx])
-		}
-		return forwarded
-	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err == nil && host != "" {
-		return host
-	}
-	if r.RemoteAddr != "" {
-		return r.RemoteAddr
-	}
-	return "unknown"
-}
-
 func originAllowed(r *http.Request, allowed []string, fallbackURLs ...string) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
@@ -1057,4 +1164,45 @@ func envelopeStringField(raw json.RawMessage, key string) string {
 	}
 	value, _ := meta[key].(string)
 	return value
+}
+
+func (s *Server) dequeueMessages(ctx context.Context, domainID, recipientDeviceID string, now time.Time, limit int) ([]queue.Message, error) {
+	if s.repo == nil {
+		return s.queue.DequeueFor(domainID, recipientDeviceID, now, limit), nil
+	}
+	claimed, err := s.repo.ClaimPendingMessagesFor(ctx, repository.DomainID(domainID), recipientDeviceID, now, time.Minute, limit)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]queue.Message, 0, len(claimed))
+	for _, msg := range claimed {
+		out = append(out, queue.Message{
+			DomainID:          string(msg.DomainID),
+			MessageID:         msg.MessageID,
+			SenderDeviceID:    msg.SenderDeviceID,
+			RecipientDeviceID: msg.RecipientDeviceID,
+			Envelope:          msg.EnvelopeRaw,
+			Priority:          msg.Priority,
+			QueuedAt:          msg.QueuedAt,
+			ExpiresAt:         msg.ExpiresAt,
+		})
+	}
+	return out, nil
+}
+
+func clientKey(r *http.Request) string {
+	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+		if idx := strings.IndexByte(forwarded, ','); idx >= 0 {
+			return strings.TrimSpace(forwarded[:idx])
+		}
+		return forwarded
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err == nil && host != "" {
+		return host
+	}
+	if r.RemoteAddr != "" {
+		return r.RemoteAddr
+	}
+	return "unknown"
 }

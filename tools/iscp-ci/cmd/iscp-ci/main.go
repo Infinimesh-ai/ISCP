@@ -72,6 +72,7 @@ var expectedMethods = []methodManifestEntry{
 	{Path: "/v2/relay/devices/refresh-access", Method: "post"},
 	{Path: "/v2/relay/devices/revoke-access", Method: "post"},
 	{Path: "/v2/relay/connect", Method: "get"},
+	{Path: "/v2/relay/duplex", Method: "get"},
 	{Path: "/v2/relay/envelopes", Method: "post"},
 	{Path: "/v2/relay/admin/devices", Method: "get"},
 	{Path: "/v2/relay/admin/connections", Method: "get"},
@@ -433,7 +434,7 @@ func generateSchemas(root *os.Root) error {
 
 func generateOpenAPI(root *os.Root) error {
 	routeSourceNames := []string{
-		"services/relay-reference/internal/relay/server.go",
+		"pkg/server/relay/server.go",
 		"services/trust-root-reference/internal/trust/server.go",
 	}
 

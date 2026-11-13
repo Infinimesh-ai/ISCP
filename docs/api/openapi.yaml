@@ -51,6 +51,20 @@ paths:
       summary: Relay WebSocket connect challenge and READY state machine
       responses:
         "101": { description: WebSocket upgraded }
+        "410": { description: Legacy transport retired for an explicitly activated duplex scope }
+  /v2/relay/duplex:
+    get:
+      summary: Candidate authenticated full-duplex Relay transport
+      description: >-
+        Available only with explicit duplex-v1 activation. Requires WebSocket
+        subprotocol iscp.relay.duplex.v1; device proof and access authentication
+        occur in frames after upgrade. See spec/relay-duplex.md for the candidate
+        frame, receipt, history, and same-socket reauthentication contract.
+        The default legacy configuration does not expose this endpoint.
+      responses:
+        "101": { description: WebSocket upgraded; challenge authentication still required }
+        "400": { description: Invalid upgrade or subprotocol }
+        "403": { description: Origin denied }
   /v2/relay/envelopes:
     post:
       summary: Submit an opaque SecureEnvelope
@@ -59,6 +73,7 @@ paths:
           RelayAccessProof: []
       responses:
         "202": { description: Relay receipt }
+        "410": { description: Legacy transport retired for an explicitly activated duplex scope }
         "401": { description: Missing or invalid relay access credential or production proof }
         "403": { description: Access credential does not match envelope sender }
   /v2/relay/admin/devices:
