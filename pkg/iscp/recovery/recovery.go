@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	TypeWrappedCredentials = "iscp.relay.credential_recovery.wrapped.v2"
+	TypeWrappedCredentials = "iscp.relay.credential_recovery.wrapped.v2" // #nosec G101 -- public protocol object type, not a credential
 	TranscriptLabel        = "iscp/v2/relay/credential-recovery"
 )
 
