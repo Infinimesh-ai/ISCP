@@ -1,6 +1,7 @@
 package duplex
 
 import (
+	"bytes"
 	"encoding/json"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/crypto"
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/identity"
@@ -8,6 +9,28 @@ import (
 	"testing"
 	"time"
 )
+
+func TestEmbeddedSchemasMatchPublishedSources(t *testing.T) {
+	for _, name := range []string{"candidates/relay.duplex.v1.json", "candidates/relay.acceptance.v1.json", "json/device.proof.v2.json", "json/secure_envelope.v2.json"} {
+		embedded, err := schemas.ReadFile("schemas/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		published, err := os.ReadFile("../../../schemas/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var a, b any
+		if json.Unmarshal(embedded, &a) != nil || json.Unmarshal(published, &b) != nil {
+			t.Fatal("invalid schema", name)
+		}
+		aBytes, _ := json.Marshal(a)
+		bBytes, _ := json.Marshal(b)
+		if !bytes.Equal(aBytes, bBytes) {
+			t.Fatalf("embedded schema drift: %s", name)
+		}
+	}
+}
 
 func TestFrozenFramesAndAuthenticationBytes(t *testing.T) {
 	b, e := os.ReadFile("../../../conformance/fixtures/relay.duplex.v1.vectors.json")
@@ -35,7 +58,7 @@ func TestFrozenFramesAndAuthenticationBytes(t *testing.T) {
 		}
 	}
 	ch, _ := Decode(v.Frames[0])
-	got, e := AuthChallenge(ch, "authenticate", "1", "0", "test-token", identity.DeviceIdentity{DomainID: "domain-test", DeviceID: "device-test"})
+	got, e := AuthChallenge(ch, "authenticate", "1", "0", "fixture", identity.DeviceIdentity{DomainID: "domain-test", DeviceID: "device-test"})
 	if e != nil || got != v.Challenge {
 		t.Fatal(got, e)
 	}

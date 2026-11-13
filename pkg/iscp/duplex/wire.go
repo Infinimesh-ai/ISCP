@@ -113,7 +113,7 @@ func Decode(raw []byte) (Frame, error) {
 	return f, e
 }
 func Encode(f Frame) ([]byte, error) {
-	b, e := json.Marshal(f)
+	b, e := json.Marshal(f) // #nosec G117 -- authentication wire codec; credentials are required on the protected transport, never logged
 	if e != nil {
 		return nil, e
 	}

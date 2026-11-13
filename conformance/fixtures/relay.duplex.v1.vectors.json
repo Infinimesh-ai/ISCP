@@ -1,6 +1,6 @@
 {
   "context": {
-    "access_token_sha256": "TF3Jt3CJBfd_Xl0WMWtd-0JeaMsybc1VqGDpCncHAx4",
+    "access_token_sha256": "8W0F7GspJI0sYa2x6SY_eOT3us4blVAUotF4cs_kBk0",
     "challenge": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
     "challenge_id": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
     "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -16,13 +16,13 @@
     "relay_id": "relay-test",
     "request_id": "1"
   },
-  "context_canonical": "{\"access_token_sha256\":\"TF3Jt3CJBfd_Xl0WMWtd-0JeaMsybc1VqGDpCncHAx4\",\"challenge\":\"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM\",\"challenge_id\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"connection_id\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"device_id\":\"device-test\",\"domain_id\":\"domain-test\",\"history_id\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"limits_sha256\":\"JbOt-VgyDcLNvVMLYsuq6Af0zIB4X_Puotqmi0_mRY8\",\"method\":\"GET\",\"owner_generation\":\"0\",\"path\":\"/v2/relay/duplex\",\"protocol\":\"iscp.relay.duplex.v1\",\"purpose\":\"authenticate\",\"relay_id\":\"relay-test\",\"request_id\":\"1\"}",
+  "context_canonical": "{\"access_token_sha256\":\"8W0F7GspJI0sYa2x6SY_eOT3us4blVAUotF4cs_kBk0\",\"challenge\":\"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM\",\"challenge_id\":\"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI\",\"connection_id\":\"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\",\"device_id\":\"device-test\",\"domain_id\":\"domain-test\",\"history_id\":\"AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE\",\"limits_sha256\":\"JbOt-VgyDcLNvVMLYsuq6Af0zIB4X_Puotqmi0_mRY8\",\"method\":\"GET\",\"owner_generation\":\"0\",\"path\":\"/v2/relay/duplex\",\"protocol\":\"iscp.relay.duplex.v1\",\"purpose\":\"authenticate\",\"relay_id\":\"relay-test\",\"request_id\":\"1\"}",
   "envelope": {
     "ciphertext": "BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY",
     "domain_id": "domain-test",
     "message_id": "message-test",
     "nonce": "BQUFBQUFBQUFBQUF",
-    "payload_type": "iscp.workbench.request.v1",
+    "payload_type": "iscp.test.payload.v1",
     "recipient_device_id": "recipient-test",
     "route": {
       "priority": 5,
@@ -34,8 +34,8 @@
     "session_id": "session-test",
     "type": "iscp.secure_envelope.v2"
   },
-  "envelope_canonical": "{\"ciphertext\":\"BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY\",\"domain_id\":\"domain-test\",\"message_id\":\"message-test\",\"nonce\":\"BQUFBQUFBQUFBQUF\",\"payload_type\":\"iscp.workbench.request.v1\",\"recipient_device_id\":\"recipient-test\",\"route\":{\"priority\":5,\"relay_id\":\"relay-test\",\"ttl_seconds\":30},\"sender_device_id\":\"device-test\",\"sequence\":1,\"session_id\":\"session-test\",\"type\":\"iscp.secure_envelope.v2\"}",
-  "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+  "envelope_canonical": "{\"ciphertext\":\"BgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgYGBgY\",\"domain_id\":\"domain-test\",\"message_id\":\"message-test\",\"nonce\":\"BQUFBQUFBQUFBQUF\",\"payload_type\":\"iscp.test.payload.v1\",\"recipient_device_id\":\"recipient-test\",\"route\":{\"priority\":5,\"relay_id\":\"relay-test\",\"ttl_seconds\":30},\"sender_device_id\":\"device-test\",\"sequence\":1,\"session_id\":\"session-test\",\"type\":\"iscp.secure_envelope.v2\"}",
+  "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
   "frames": [
     {
       "challenge": "AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM",
@@ -56,21 +56,21 @@
       "v": 1
     },
     {
-      "access_token": "test-token",
+      "access_token": "fixture",
       "challenge_id": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI",
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "kind": "authenticate",
       "proof": {
         "audience": "relay-test",
-        "challenge": "ztgbgIFC8M-jWkH-qAaODa7VVTNpPL73ut8RRKH7WxU",
+        "challenge": "uzGD0ViJ73INq47DQ7812x00s-mEsV80JGiYODk7vOI",
         "device_id": "device-test",
         "domain_id": "domain-test",
         "issued_at": "2026-10-19T00:00:00Z",
         "nonce": "BAQEBAQEBAQEBAQEBAQEBA",
         "signature": {
           "alg": "Ed25519",
-          "kid": "test-key-only",
-          "value": "zuM2xzWt5DlB4DS5BnL1DDvup3r3XgNpvajfKg19hVJ-yi_3KZPlZ9ghM-c7bg-dHek55aP9FP8h8r__w83zCQ"
+          "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+          "value": "WSAe47YWerXD9ZtKs4ZifN3rwrIhAb4NrQTWfEIA0GNuuavZ2-2p5RNjpt61SIg11JbhiId845a-JefgzlsJCA"
         },
         "type": "iscp.device.proof.v2"
       },
@@ -102,7 +102,7 @@
         "domain_id": "domain-test",
         "message_id": "message-test",
         "nonce": "BQUFBQUFBQUFBQUF",
-        "payload_type": "iscp.workbench.request.v1",
+        "payload_type": "iscp.test.payload.v1",
         "recipient_device_id": "recipient-test",
         "route": {
           "priority": 5,
@@ -114,7 +114,7 @@
         "session_id": "session-test",
         "type": "iscp.secure_envelope.v2"
       },
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "history_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
       "kind": "submit",
       "message_id": "message-test",
@@ -125,14 +125,14 @@
     },
     {
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "kind": "accepted",
       "message_id": "message-test",
       "owner_generation": "1",
       "receipt": {
         "accepted_at": "2026-10-19T00:00:01Z",
         "domain_id": "domain-test",
-        "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+        "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
         "expires_at": "2026-10-19T00:00:30Z",
         "history_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
         "message_id": "message-test",
@@ -143,8 +143,8 @@
         "sender_device_id": "device-test",
         "signature": {
           "alg": "Ed25519",
-          "kid": "test-key-only",
-          "value": "EAoSehFpytdRTwss6_SFcrl4Yy1mxrKrxbKwn57Wia8wzMMBq3BvPiP9Halq5aOxz5km2_ymM9T2acoptirWDQ"
+          "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+          "value": "jMmmM2rM3rFWq0AukcLodW26D0NTxo1HT3BZsK6omx4XR8Epmsx9JcSytdK7-_OAjT4T0kf93S34rCjZ8cftCQ"
         },
         "type": "iscp.relay.acceptance.v1"
       },
@@ -154,7 +154,7 @@
     {
       "code": "message_conflict",
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "kind": "rejected",
       "message_id": "message-test",
       "owner_generation": "1",
@@ -168,7 +168,7 @@
         "domain_id": "domain-test",
         "message_id": "message-test",
         "nonce": "BQUFBQUFBQUFBQUF",
-        "payload_type": "iscp.workbench.request.v1",
+        "payload_type": "iscp.test.payload.v1",
         "recipient_device_id": "recipient-test",
         "route": {
           "priority": 5,
@@ -180,7 +180,7 @@
         "session_id": "session-test",
         "type": "iscp.secure_envelope.v2"
       },
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "kind": "delivery",
       "message_id": "message-test",
       "owner_generation": "1",
@@ -188,7 +188,7 @@
     },
     {
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "history_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
       "kind": "submit.query",
       "message_id": "message-test",
@@ -199,14 +199,14 @@
     },
     {
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "kind": "submit.status",
       "message_id": "message-test",
       "owner_generation": "1",
       "receipt": {
         "accepted_at": "2026-10-19T00:00:01Z",
         "domain_id": "domain-test",
-        "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+        "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
         "expires_at": "2026-10-19T00:00:30Z",
         "history_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
         "message_id": "message-test",
@@ -217,8 +217,8 @@
         "sender_device_id": "device-test",
         "signature": {
           "alg": "Ed25519",
-          "kid": "test-key-only",
-          "value": "EAoSehFpytdRTwss6_SFcrl4Yy1mxrKrxbKwn57Wia8wzMMBq3BvPiP9Halq5aOxz5km2_ymM9T2acoptirWDQ"
+          "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+          "value": "jMmmM2rM3rFWq0AukcLodW26D0NTxo1HT3BZsK6omx4XR8Epmsx9JcSytdK7-_OAjT4T0kf93S34rCjZ8cftCQ"
         },
         "type": "iscp.relay.acceptance.v1"
       },
@@ -228,14 +228,14 @@
     },
     {
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "kind": "submit.status",
       "message_id": "message-test",
       "owner_generation": "1",
       "receipt": {
         "accepted_at": "2026-10-19T00:00:01Z",
         "domain_id": "domain-test",
-        "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+        "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
         "expires_at": "2026-10-19T00:00:30Z",
         "history_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
         "message_id": "message-test",
@@ -246,8 +246,8 @@
         "sender_device_id": "device-test",
         "signature": {
           "alg": "Ed25519",
-          "kid": "test-key-only",
-          "value": "EAoSehFpytdRTwss6_SFcrl4Yy1mxrKrxbKwn57Wia8wzMMBq3BvPiP9Halq5aOxz5km2_ymM9T2acoptirWDQ"
+          "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+          "value": "jMmmM2rM3rFWq0AukcLodW26D0NTxo1HT3BZsK6omx4XR8Epmsx9JcSytdK7-_OAjT4T0kf93S34rCjZ8cftCQ"
         },
         "type": "iscp.relay.acceptance.v1"
       },
@@ -257,7 +257,7 @@
     },
     {
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "kind": "submit.status",
       "message_id": "message-test",
       "owner_generation": "1",
@@ -267,7 +267,7 @@
     },
     {
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
-      "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+      "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
       "kind": "submit.status",
       "message_id": "message-test",
       "owner_generation": "1",
@@ -294,22 +294,22 @@
       "v": 1
     },
     {
-      "access_token": "test-token",
+      "access_token": "fixture",
       "challenge_id": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg",
       "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
       "kind": "reauthenticate",
       "owner_generation": "1",
       "proof": {
         "audience": "relay-test",
-        "challenge": "WbacGWyK08Om9TgSFV80BU-xz2dQMQS-NubzbOEQbuc",
+        "challenge": "Cx-RLUPY8Djk1LeDAUK86FUH93EQ8XsjIEgehtU3Q4k",
         "device_id": "device-test",
         "domain_id": "domain-test",
         "issued_at": "2026-10-19T00:01:00Z",
         "nonce": "CgoKCgoKCgoKCgoKCgoKCg",
         "signature": {
           "alg": "Ed25519",
-          "kid": "test-key-only",
-          "value": "_Y0hB-tu_9uSw315H6TEWCKEWrgJBnjjdjsvCaPXzkMjuFp9nCFoUhUROhfk3ocjV-JP7K_KCm1KunMkqva2Dg"
+          "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+          "value": "StQ6wVobXxl9oJpTKsXS9qcwVF8c7H0x-a35bBCZexrmi9pv7kHjXEZ2kqq5muQyZye_IxYpmwLoKST2RzvkAw"
         },
         "type": "iscp.device.proof.v2"
       },
@@ -334,22 +334,22 @@
   ],
   "proof": {
     "audience": "relay-test",
-    "challenge": "ztgbgIFC8M-jWkH-qAaODa7VVTNpPL73ut8RRKH7WxU",
+    "challenge": "uzGD0ViJ73INq47DQ7812x00s-mEsV80JGiYODk7vOI",
     "device_id": "device-test",
     "domain_id": "domain-test",
     "issued_at": "2026-10-19T00:00:00Z",
     "nonce": "BAQEBAQEBAQEBAQEBAQEBA",
     "signature": {
       "alg": "Ed25519",
-      "kid": "test-key-only",
-      "value": "zuM2xzWt5DlB4DS5BnL1DDvup3r3XgNpvajfKg19hVJ-yi_3KZPlZ9ghM-c7bg-dHek55aP9FP8h8r__w83zCQ"
+      "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+      "value": "WSAe47YWerXD9ZtKs4ZifN3rwrIhAb4NrQTWfEIA0GNuuavZ2-2p5RNjpt61SIg11JbhiId845a-JefgzlsJCA"
     },
     "type": "iscp.device.proof.v2"
   },
-  "proof_challenge": "ztgbgIFC8M-jWkH-qAaODa7VVTNpPL73ut8RRKH7WxU",
-  "proof_signature_input_hex": "495343502d56322d5349474e415455524500697363702e6465766963652e70726f6f662e7632007b2261756469656e6365223a2272656c61792d74657374222c226368616c6c656e6765223a227a74676267494643384d2d6a576b482d7141614f4461375656544e70504c373375743852524b4837577855222c226465766963655f6964223a226465766963652d74657374222c22646f6d61696e5f6964223a22646f6d61696e2d74657374222c226973737565645f6174223a22323032362d31302d31395430303a30303a30305a222c226e6f6e6365223a2242415145424151454241514542415145424151454241222c2274797065223a22697363702e6465766963652e70726f6f662e7632227d",
+  "proof_challenge": "uzGD0ViJ73INq47DQ7812x00s-mEsV80JGiYODk7vOI",
+  "proof_signature_input_hex": "495343502d56322d5349474e415455524500697363702e6465766963652e70726f6f662e7632007b2261756469656e6365223a2272656c61792d74657374222c226368616c6c656e6765223a22757a47443056694a3733494e713437445137383132783030732d6d45735638304a4769594f446b37764f49222c226465766963655f6964223a226465766963652d74657374222c22646f6d61696e5f6964223a22646f6d61696e2d74657374222c226973737565645f6174223a22323032362d31302d31395430303a30303a30305a222c226e6f6e6365223a2242415145424151454241514542415145424151454241222c2274797065223a22697363702e6465766963652e70726f6f662e7632227d",
   "reauth_context": {
-    "access_token_sha256": "TF3Jt3CJBfd_Xl0WMWtd-0JeaMsybc1VqGDpCncHAx4",
+    "access_token_sha256": "8W0F7GspJI0sYa2x6SY_eOT3us4blVAUotF4cs_kBk0",
     "challenge": "CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk",
     "challenge_id": "CAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg",
     "connection_id": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
@@ -367,23 +367,23 @@
   },
   "reauth_proof": {
     "audience": "relay-test",
-    "challenge": "WbacGWyK08Om9TgSFV80BU-xz2dQMQS-NubzbOEQbuc",
+    "challenge": "Cx-RLUPY8Djk1LeDAUK86FUH93EQ8XsjIEgehtU3Q4k",
     "device_id": "device-test",
     "domain_id": "domain-test",
     "issued_at": "2026-10-19T00:01:00Z",
     "nonce": "CgoKCgoKCgoKCgoKCgoKCg",
     "signature": {
       "alg": "Ed25519",
-      "kid": "test-key-only",
-      "value": "_Y0hB-tu_9uSw315H6TEWCKEWrgJBnjjdjsvCaPXzkMjuFp9nCFoUhUROhfk3ocjV-JP7K_KCm1KunMkqva2Dg"
+      "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+      "value": "StQ6wVobXxl9oJpTKsXS9qcwVF8c7H0x-a35bBCZexrmi9pv7kHjXEZ2kqq5muQyZye_IxYpmwLoKST2RzvkAw"
     },
     "type": "iscp.device.proof.v2"
   },
-  "reauth_signature_input_hex": "495343502d56322d5349474e415455524500697363702e6465766963652e70726f6f662e7632007b2261756469656e6365223a2272656c61792d74657374222c226368616c6c656e6765223a22576261634757794b30384f6d395467534656383042552d787a3264514d51532d4e75627a624f4551627563222c226465766963655f6964223a226465766963652d74657374222c22646f6d61696e5f6964223a22646f6d61696e2d74657374222c226973737565645f6174223a22323032362d31302d31395430303a30313a30305a222c226e6f6e6365223a2243676f4b43676f4b43676f4b43676f4b43676f4b4367222c2274797065223a22697363702e6465766963652e70726f6f662e7632227d",
+  "reauth_signature_input_hex": "495343502d56322d5349474e415455524500697363702e6465766963652e70726f6f662e7632007b2261756469656e6365223a2272656c61792d74657374222c226368616c6c656e6765223a2243782d524c55505938446a6b314c654441554b3836465548393345513858736a494567656874553351346b222c226465766963655f6964223a226465766963652d74657374222c22646f6d61696e5f6964223a22646f6d61696e2d74657374222c226973737565645f6174223a22323032362d31302d31395430303a30313a30305a222c226e6f6e6365223a2243676f4b43676f4b43676f4b43676f4b43676f4b4367222c2274797065223a22697363702e6465766963652e70726f6f662e7632227d",
   "receipt": {
     "accepted_at": "2026-10-19T00:00:01Z",
     "domain_id": "domain-test",
-    "envelope_digest": "ltb7xZCOJTMKbKE_wQAECUVvm08o3YNptW8ahFet6gg",
+    "envelope_digest": "HmgNdyo8y9QHTckD2qJ_3vkrBO5jAMPlh1YqCLEJY_U",
     "expires_at": "2026-10-19T00:00:30Z",
     "history_id": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE",
     "message_id": "message-test",
@@ -394,12 +394,12 @@
     "sender_device_id": "device-test",
     "signature": {
       "alg": "Ed25519",
-      "kid": "test-key-only",
-      "value": "EAoSehFpytdRTwss6_SFcrl4Yy1mxrKrxbKwn57Wia8wzMMBq3BvPiP9Halq5aOxz5km2_ymM9T2acoptirWDQ"
+      "kid": "Yjv4BkPCa5Cn4L3bpZ_D1JRmFx_q7_AqI6cHY95guTo",
+      "value": "jMmmM2rM3rFWq0AukcLodW26D0NTxo1HT3BZsK6omx4XR8Epmsx9JcSytdK7-_OAjT4T0kf93S34rCjZ8cftCQ"
     },
     "type": "iscp.relay.acceptance.v1"
   },
-  "receipt_signature_input_hex": "495343502d56322d5349474e415455524500697363702e72656c61792e616363657074616e63652e7631007b2261636365707465645f6174223a22323032362d31302d31395430303a30303a30315a222c22646f6d61696e5f6964223a22646f6d61696e2d74657374222c22656e76656c6f70655f646967657374223a226c746237785a434f4a544d4b624b455f77514145435556766d30386f33594e707457386168466574366767222c22657870697265735f6174223a22323032362d31302d31395430303a30303a33305a222c22686973746f72795f6964223a2241514542415145424151454241514542415145424151454241514542415145424151454241514542415145222c226d6573736167655f6964223a226d6573736167652d74657374222c226e6f745f6166746572223a22323032362d31302d31395430303a30303a33305a222c22726563656970745f6964223a2242776348427763484277634842776348427763484277222c22726563697069656e745f6465766963655f6964223a22726563697069656e742d74657374222c2272656c61795f6964223a2272656c61792d74657374222c2273656e6465725f6465766963655f6964223a226465766963652d74657374222c2274797065223a22697363702e72656c61792e616363657074616e63652e7631227d",
+  "receipt_signature_input_hex": "495343502d56322d5349474e415455524500697363702e72656c61792e616363657074616e63652e7631007b2261636365707465645f6174223a22323032362d31302d31395430303a30303a30315a222c22646f6d61696e5f6964223a22646f6d61696e2d74657374222c22656e76656c6f70655f646967657374223a22486d674e64796f387939514854636b4432714a5f33766b72424f356a414d506c68315971434c454a595f55222c22657870697265735f6174223a22323032362d31302d31395430303a30303a33305a222c22686973746f72795f6964223a2241514542415145424151454241514542415145424151454241514542415145424151454241514542415145222c226d6573736167655f6964223a226d6573736167652d74657374222c226e6f745f6166746572223a22323032362d31302d31395430303a30303a33305a222c22726563656970745f6964223a2242776348427763484277634842776348427763484277222c22726563697069656e745f6465766963655f6964223a22726563697069656e742d74657374222c2272656c61795f6964223a2272656c61792d74657374222c2273656e6465725f6465766963655f6964223a226465766963652d74657374222c2274797065223a22697363702e72656c61792e616363657074616e63652e7631227d",
   "status": "proposed; golden contract oracle only, not service qualification",
   "test_key_seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
   "test_public_key": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg"
