@@ -175,7 +175,9 @@ func TestDuplexWireExactByteLimits(t *testing.T) {
 	}
 }
 func TestDuplexEightDayTombstoneAndMissingHistory(t *testing.T) {
-	q := newDuplexQualification(t)
+	// This test owns the cleanup cutoff and exact deletion count. Join the
+	// background sweeper before seeding an already-expired admission.
+	q := retentionQualification(t)
 	now := time.Now().UTC().Truncate(time.Second)
 	then := now.Add(-8 * 24 * time.Hour)
 	env := qualificationEnvelope(q.a.Identity.DeviceID, q.b.Identity.DeviceID, "eight-day-original")
