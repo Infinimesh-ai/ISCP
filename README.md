@@ -26,7 +26,11 @@ Protocol.
   sessions, envelopes, payloads, provisioning, errors, storage, and logging.
 - Go Server SDK packages for HTTP helpers, policy, PostgreSQL repositories,
   rate limiting, replay protection, queueing, audit logs, and key boundaries.
-- Relay Reference Service for opaque message delivery.
+- Reusable candidate duplex Relay client and credential lifecycle manager,
+  with durable receipt recovery and caller-owned persistence hooks.
+- Candidate HTTPS operation recovery SDK and authenticated server handlers.
+- Relay Reference Service for opaque message delivery, with the existing
+  transport preserved by default and duplex available by explicit activation.
 - Trust Root Reference Service for device authorization, trust grants, and
   revocation checks.
 - CLI workflows for local demos, conformance, descriptor/proof/session/envelope
@@ -66,6 +70,7 @@ release gate policy.
 ```text
 spec/                         Protocol specifications
 schemas/json/                 JSON Schemas for iscp.*.v2 objects
+schemas/candidates/           Proposed extension schemas
 pkg/iscp/                     Go Core SDK packages
 pkg/server/                   Go Server SDK packages
 services/relay-reference/     Relay Reference Service
@@ -75,7 +80,7 @@ conformance/                  Conformance runner and vectors
 deploy/                       Compose, migrations, and Helm baseline
 docs/                         API, operations, decisions, release, security
 scripts/                      Local and CI automation
-examples/                     Device/watch simulator examples
+examples/                     Device/watch and control recovery examples
 ```
 
 ## Requirements
@@ -140,6 +145,28 @@ export ISCP_TRUST_ENDPOINT="http://127.0.0.1:9081"
 ./scripts/conformance.sh
 ```
 
+## Candidate Connectivity SDKs
+
+The proposed duplex and operation recovery bindings have public implementations
+in `pkg/iscp/duplex`, `pkg/iscp/relay`, `pkg/iscp/control`, `pkg/server/relay` and
+`pkg/server/control`. They remain opt-in candidates; importing them does not
+change existing service endpoints or establish a new stable protocol release.
+
+The Relay credential manager owns shared recovery, durable checkpoint ordering,
+installation retries and shutdown. Applications supply verified authority policy,
+atomic encrypted storage and their durable installation/ACK hooks. The control
+recovery example demonstrates one issuance across a lost response and lost ACK:
+
+```bash
+go run ./examples/control-recovery
+```
+
+See [duplex activation and SDK integration](docs/operations/duplex.md), the
+[operation recovery candidate](spec/operation-recovery.md), and
+[downstream reconciliation](docs/development/downstream-reconciliation.md).
+Enabling duplex requires explicit continuous-history activation and writer
+fencing; changing an environment variable alone does not migrate a used scope.
+
 ## CLI
 
 Run the CLI from source:
@@ -162,6 +189,7 @@ go install github.com/Infinimesh-ai/ISCP/tools/iscp-cli/cmd/iscp@latest
 - [Event catalog](docs/api/events.md)
 - [Installation notes](docs/operations/install.md)
 - [PostgreSQL operations](docs/operations/postgres.md)
+- [Candidate duplex operations](docs/operations/duplex.md)
 - [Release checklist](docs/release/checklist.md)
 - [Contributing guide](CONTRIBUTING.md)
 - [Security policy](SECURITY.md)
@@ -197,4 +225,7 @@ Windows users can run the equivalent `.ps1` scripts from PowerShell.
 
 ## License
 
-ISCP is released under the [MIT License](LICENSE).
+The existing ISCP source is released under the [MIT License](LICENSE).
+Imported connectivity SDK material retains its [Apache-2.0 license](LICENSES/Apache-2.0.txt)
+and attribution in [NOTICE](NOTICE) and the
+[control provenance notice](THIRD_PARTY_NOTICES.control.txt).

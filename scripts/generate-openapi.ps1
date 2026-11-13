@@ -6,7 +6,7 @@ $distDir = Join-Path $root "dist"
 $summaryPath = Join-Path $distDir "openapi-check.json"
 $openapiPath = Join-Path $root "docs/api/openapi.yaml"
 $routeFiles = @(
-    (Join-Path $root "services/relay-reference/internal/relay/server.go"),
+    (Join-Path $root "pkg/server/relay/server.go"),
     (Join-Path $root "services/trust-root-reference/internal/trust/server.go")
 )
 
@@ -19,6 +19,7 @@ $expectedMethods = [ordered]@{
     "/v2/relay/devices/refresh-access" = "post"
     "/v2/relay/devices/revoke-access" = "post"
     "/v2/relay/connect" = "get"
+    "/v2/relay/duplex" = "get"
     "/v2/relay/envelopes" = "post"
     "/v2/relay/admin/devices" = "get"
     "/v2/relay/admin/connections" = "get"
@@ -125,7 +126,7 @@ $summary = [ordered]@{
     generated_at = (Get-Date).ToUniversalTime().ToString("o")
     openapi_file = "docs/api/openapi.yaml"
     route_sources = @(
-        "services/relay-reference/internal/relay/server.go",
+        "pkg/server/relay/server.go",
         "services/trust-root-reference/internal/trust/server.go"
     )
     status = $(if ($errors.Count -eq 0) { "pass" } else { "fail" })

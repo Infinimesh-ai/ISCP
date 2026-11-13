@@ -58,3 +58,18 @@ CONNECTED -> CHALLENGE_SENT -> POP_VERIFIED -> READY -> CLOSED
 
 Business envelopes are accepted only in READY state. Relay receipt confirms
 relay handling only and does not imply E2E application receipt.
+
+## Candidate Duplex Binding
+
+- `GET /v2/relay/duplex` (explicit opt-in candidate)
+
+The proposed [duplex binding](relay-duplex.md) adds bidirectional opaque
+delivery, immutable signed admission receipts and same-socket reauthentication.
+It is implemented by the reusable Core and Server SDKs. The reference service
+retains the REST and receive-only WebSocket behavior above by default.
+
+Selecting `duplex-v1` requires stable signing identity, continuous history and
+writer fencing; the two legacy transport endpoints then return HTTP 410 with
+`transport_upgrade_required` for that scope. This does not permit unfenced
+legacy and duplex writers to share an admission history. See the
+[activation procedure](../docs/operations/duplex.md) before enabling it.

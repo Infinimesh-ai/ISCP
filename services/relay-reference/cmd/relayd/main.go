@@ -13,7 +13,7 @@ import (
 	"github.com/Infinimesh-ai/ISCP/pkg/iscp/config"
 	iscplog "github.com/Infinimesh-ai/ISCP/pkg/iscp/logging"
 	"github.com/Infinimesh-ai/ISCP/pkg/server/postgres"
-	"github.com/Infinimesh-ai/ISCP/services/relay-reference/internal/relay"
+	"github.com/Infinimesh-ai/ISCP/pkg/server/relay"
 )
 
 func main() {
@@ -31,6 +31,8 @@ func main() {
 		defer db.Close()
 	}
 	cfg := relay.Config{
+		Transport:      env("ISCP_RELAY_TRANSPORT", relay.TransportLegacy),
+		SignerFile:     os.Getenv("ISCP_SIGNER_FILE"),
 		DomainID:       env("ISCP_DOMAIN_ID", "local"),
 		RelayID:        env("ISCP_RELAY_ID", "relay-local"),
 		BaseURL:        env("ISCP_RELAY_BASE_URL", "http://localhost:8080"),
@@ -45,6 +47,7 @@ func main() {
 		logger.Error("relay init failed", "error", err)
 		os.Exit(1)
 	}
+	defer srv.Close()
 	addr := env("ISCP_RELAY_ADDR", ":8080")
 	logger.Info("relay starting", "addr", addr)
 	httpServer := &http.Server{

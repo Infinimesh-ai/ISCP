@@ -3,8 +3,11 @@ package postgres
 import (
 	"context"
 	"embed"
+	"errors"
+	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,21 +41,65 @@ func EmbeddedMigrations() ([]Migration, error) {
 	return out, nil
 }
 
-func ApplyMigrations(ctx context.Context, pool *pgxpool.Pool, migrations []Migration) error {
+// A stable database-scoped key shared by every ISCP service (ASCII ISCPMIGR).
+// A session lock is necessary because each migration commits independently.
+const migrationLockID int64 = 0x495343504d494752
+
+// ApplyMigrations serializes the entire migration set across service processes.
+// The pinned connection owns the lock through all individual commits; no
+// namespace history, activation state, or migration SQL is rewritten here.
+func ApplyMigrations(ctx context.Context, pool *pgxpool.Pool, migrations []Migration) (result error) {
+	if len(migrations) == 0 {
+		return nil
+	}
+	conn, err := pool.Acquire(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Release()
+	if _, err = conn.Exec(ctx, "SELECT pg_advisory_lock($1)", migrationLockID); err != nil {
+		// Cancellation can leave the lock outcome unknown. Never return that
+		// session to the pool, even when PostgreSQL has already closed it.
+		return errors.Join(fmt.Errorf("acquire migration lock: %w", err), closeMigrationConnection(conn))
+	}
+	defer func() {
+		// The caller may already have canceled. Releasing a session lock must
+		// not inherit that cancellation or leave the next service blocked.
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		var unlocked bool
+		err := conn.QueryRow(cleanup, "SELECT pg_advisory_unlock($1)", migrationLockID).Scan(&unlocked)
+		if err == nil && !unlocked {
+			err = errors.New("migration lock was not held")
+		}
+		if err != nil {
+			result = errors.Join(result, fmt.Errorf("release migration lock: %w", err), closeMigrationConnection(conn))
+		}
+	}()
 	for _, migration := range migrations {
-		if err := applyOne(ctx, pool, migration); err != nil {
-			return err
+		if err := applyOne(ctx, conn, migration); err != nil {
+			return fmt.Errorf("apply migration %s: %w", migration.Name, err)
 		}
 	}
 	return nil
 }
 
-func applyOne(ctx context.Context, pool *pgxpool.Pool, migration Migration) error {
-	tx, err := pool.BeginTx(ctx, pgx.TxOptions{})
+func closeMigrationConnection(conn *pgxpool.Conn) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return conn.Conn().Close(ctx)
+}
+
+func applyOne(ctx context.Context, conn *pgxpool.Conn, migration Migration) error {
+	tx, err := conn.BeginTx(ctx, pgx.TxOptions{})
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	defer func() {
+		cleanup, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = tx.Rollback(cleanup)
+	}()
 	if _, err := tx.Exec(ctx, migration.SQL); err != nil {
 		return err
 	}

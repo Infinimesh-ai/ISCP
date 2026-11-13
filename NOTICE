@@ -1,0 +1,25 @@
+ISCP connectivity SDK extraction
+
+The existing ISCP source remains under the root MIT license.
+
+Code derived from SparkClaw (Apache-2.0) is retained under Apache-2.0 in:
+  pkg/iscp/relay/
+  pkg/iscp/control/
+  pkg/server/control/
+  examples/control-recovery/
+The Apache-2.0 license is retained in LICENSES/Apache-2.0.txt.
+THIRD_PARTY_NOTICES.control.txt records the control extraction in detail.
+
+Sources: SparkClaw revision 32143be1fa81519413c1b6271ac21a0e781c1787,
+services/gateway/internal/iscpbridge and internal/iscpcontrol; independent ISCP
+fork revision f6037224d5b6742cb008ffc946a8ec1834091e91. Changes separate public
+protocol, client and server ownership, replace application-profile assumptions
+with typed interfaces, and add candidate/compatibility and persistence tests.
+The corresponding source reconciliation is documented in
+ docs/development/downstream-reconciliation.md.
+
+The public Relay server retains the MIT notice from the upstream-derived
+reference implementation in pkg/server/relay/UPSTREAM_LICENSE.txt. The independent
+ISCP fork's duplex codec, server, authority, repository, cleanup and SQL migrations
+are derived from that MIT-licensed repository. This extraction does not relicense
+the separately identified Apache-2.0 SparkClaw material as MIT.
