@@ -37,6 +37,12 @@ The reference executable applies the embedded migrations when
 `ISCP_DATABASE_URL` is set. Applying them creates schema, not continuous history
 or authorization to use an existing namespace as a new one.
 
+`ApplyMigrations` holds a database advisory lock across the full migration set,
+on one pinned connection, while preserving each file's independent transaction.
+Relay and Trust Root startup therefore cannot concurrently replace functions or
+triggers. Cancellation releases the lock or discards the owning connection;
+previously committed migrations and existing authority records are preserved.
+
 Configure exactly one stable signing source:
 
 - `relay.Config.Signer`: an externally managed `*identity.Device` whose persisted
